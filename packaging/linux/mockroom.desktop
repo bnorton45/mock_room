@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=MockRoom
+GenericName=Room Planner
+Comment=Mock up a room in 3D and see how much floor space remains
+Exec=mockroom %f
+Icon=mockroom
+Terminal=false
+Categories=Graphics;3DGraphics;
+MimeType=application/x-mockroom;
+Keywords=room;floorplan;furniture;3d;layout;
+StartupNotify=true
+StartupWMClass=MockRoom
