@@ -27,8 +27,6 @@ OpenGL rendering, and **NativeAOT** for self-contained native builds.
   wheel to zoom) — plus **click-to-select** item ray-picking.
 - **JSON save/load** (`.mockroom` files) via a source-generated serializer
   (NativeAOT-safe).
-- **Provider-agnostic licensing** framework (`ILicenseProvider`), currently
-  bypassed for development.
 
 ## Requirements
 
@@ -69,7 +67,6 @@ src/
   MockRoom.Core/   # pure domain + services (units, geometry, rooms, spatial,
                    # rendering math, persistence) — no UI, fully unit-tested
   MockRoom/        # Avalonia app: views, view models, 2D canvas, 3D GL viewport
-  LexCore.Client/  # provider-agnostic license activation client
 tests/
   MockRoom.Tests/  # xunit tests
 packaging/         # NativeAOT publish + installer scripts
@@ -77,13 +74,6 @@ packaging/         # NativeAOT publish + installer scripts
 
 The domain lives in `MockRoom.Core` so it stays UI-free, reflection-free, and
 NativeAOT-clean. See [`CLAUDE.md`](CLAUDE.md) for the full conventions.
-
-## Licensing layer
-
-`MockRoom` ships a provider-agnostic licensing abstraction (`ILicenseProvider`).
-During development it runs through `BypassLicenseProvider` and never contacts any
-server — no server URL, product id, or keys are part of this repository. The
-single switch lives in `src/MockRoom/Licensing/LicensingOptions.cs`.
 
 ## License
 
