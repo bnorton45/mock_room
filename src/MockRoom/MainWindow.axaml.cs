@@ -2,7 +2,6 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
-using MockRoom.Licensing;
 using MockRoom.ViewModels;
 
 namespace MockRoom;
@@ -16,16 +15,11 @@ public partial class MainWindow : Window
 
     private readonly RoomEditorViewModel _viewModel;
 
-    public MainWindow() : this(LicenseStatus.Unknown)
-    {
-    }
-
-    public MainWindow(LicenseStatus licenseStatus)
+    public MainWindow()
     {
         InitializeComponent();
         _viewModel = new RoomEditorViewModel();
         DataContext = _viewModel;
-        LicenseBadge.Text = $"License: {licenseStatus}";
 
         Plan.ItemDragged += (item, position) => _viewModel.DragItemTo(item, position);
 
@@ -65,8 +59,8 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            // A malformed or unreadable file shouldn't crash the app; surface it on the badge.
-            LicenseBadge.Text = $"Open failed: {ex.Message}";
+            // A malformed or unreadable file shouldn't crash the app; surface it on the status line.
+            StatusText.Text = $"Open failed: {ex.Message}";
         }
     }
 
@@ -89,7 +83,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            LicenseBadge.Text = $"Save failed: {ex.Message}";
+            StatusText.Text = $"Save failed: {ex.Message}";
         }
     }
 }

@@ -38,41 +38,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\LexCore.Client\LexCore.Client.csproj" />
     <ProjectReference Include="..\MockRoom.Core\MockRoom.Core.csproj" />
   </ItemGroup>
-
-  <!--
-    Dev-only sanity check: ensure the lex-core checkout the developer has locally is the same
-    commit that was used when LexCore.Client was last synced into this repo. Skipped in Release
-    (CI / NativeAOT publish) and skipped silently when lex-core isn't present on disk.
-
-    To update the pin after syncing new client files:
-      git -C <path-to-lex-core> rev-parse HEAD > lexcore.lock    (from the solution root)
-  -->
-  <Target Name="CheckLexCoreVersion" BeforeTargets="Build" Condition="'$(Configuration)' == 'Debug'">
-    <PropertyGroup>
-      <_LexCorePath>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '../../../lex-core'))</_LexCorePath>
-      <_LexCoreLockFile>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '../../lexcore.lock'))</_LexCoreLockFile>
-    </PropertyGroup>
-
-    <ReadLinesFromFile File="$(_LexCoreLockFile)">
-      <Output TaskParameter="Lines" ItemName="_LexCorePinnedHashLines" />
-    </ReadLinesFromFile>
-    <PropertyGroup>
-      <_LexCorePinnedHash>@(_LexCorePinnedHashLines)</_LexCorePinnedHash>
-    </PropertyGroup>
-
-    <Exec Command="git -C &quot;$(_LexCorePath)&quot; rev-parse HEAD" ConsoleToMSBuild="true" IgnoreExitCode="true" Condition="Exists('$(_LexCorePath)')">
-      <Output TaskParameter="ConsoleOutput" PropertyName="_LexCoreCurrentHash" />
-    </Exec>
-    <PropertyGroup>
-      <_LexCoreCurrentHash>$(_LexCoreCurrentHash.Trim())</_LexCoreCurrentHash>
-    </PropertyGroup>
-
-    <Warning Condition="!Exists('$(_LexCorePath)')" Text="lex-core repo not found at '$(_LexCorePath)' — skipping LexCore.Client version check." />
-
-    <Error Condition="Exists('$(_LexCorePath)') AND '$(_LexCoreCurrentHash)' != '$(_LexCorePinnedHash)'" Text="LexCore.Client version mismatch: lexcore.lock pins $(_LexCorePinnedHash) but lex-core HEAD is $(_LexCoreCurrentHash). Either update your lex-core checkout to the pinned commit, or re-sync src/LexCore.Client/ and update lexcore.lock (git rev-parse HEAD in lex-core)." />
-  </Target>
 
 </Project>

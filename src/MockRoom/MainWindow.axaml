@@ -15,8 +15,8 @@
             <Grid ColumnDefinitions="*,Auto">
                 <TextBlock Grid.Column="0" Text="MockRoom" FontSize="18" FontWeight="SemiBold"
                            Foreground="White" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="1" Name="LicenseBadge" FontSize="12"
-                           Foreground="#9FE3A0" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Name="StatusText" FontSize="12"
+                           Foreground="#E0A0A0" VerticalAlignment="Center" />
             </Grid>
         </Border>
 
@@ -154,7 +154,7 @@
                         <TextBlock Text="{Binding FreeAreaText}" FontSize="22" FontWeight="SemiBold"
                                    Foreground="#5AB0FF" />
                         <TextBlock FontSize="10" Foreground="#9AA0A6">
-                            <Run Text="of" /><Run Text="{Binding TotalAreaText}" /><Run Text=" total" />
+                            <Run Text="of " /><Run Text="{Binding TotalAreaText}" /><Run Text=" total" />
                         </TextBlock>
                         <TextBlock FontSize="10" Foreground="#9AA0A6">
                             <Run Text="used: " /><Run Text="{Binding UsedAreaText}" />

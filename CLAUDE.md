@@ -12,9 +12,10 @@ It defines project conventions, structure, and rules Claude must follow.
 - **Avalonia** — cross-platform UI framework (compiled bindings only — required for NativeAOT)
 - **Silk.NET** — OpenGL bindings for hardware-accelerated rendering
 - **NativeAOT** — ahead-of-time native compilation for production builds
-- **LexCore.Client** (`src/LexCore.Client/`) — self-hosted license activation client library, ships with the app. Talks to a privately-operated LexCore server. Uses the agnostic `ILicenseProvider` abstraction.
 
-The licensing layer is intentionally provider-agnostic. `ILicenseProvider` is the abstraction; `LexCoreProvider` is the current implementation. New providers go in `src/MockRoom/Licensing/<ProviderName>/`.
+The app is free and open-source under the MIT license; it has no license-activation
+layer. The domain lives in `MockRoom.Core` (UI-free, reflection-free, NativeAOT-clean)
+and the Avalonia app composes over it.
 
 ---
 
@@ -22,34 +23,20 @@ The licensing layer is intentionally provider-agnostic. `ILicenseProvider` is th
 
 ```
 src/
-  MockRoom/
+  MockRoom/                   # Avalonia app: views, view models, 2D canvas, 3D GL viewport
     Program.cs
     App.axaml / App.axaml.cs
     MainWindow.axaml / MainWindow.axaml.cs
-    Licensing/
-      ILicenseProvider.cs     # provider abstraction
-      LicenseResult.cs        # result record
-      LicenseStatus.cs        # status enum
-      LicenseManager.cs       # high-level façade
-      LexCore/
-        LexCoreProvider.cs    # adapter: MockRoom.Licensing → LexCore.Client
+    Controls/                 # FloorPlan2DControl, Viewport3DControl
+    ViewModels/
     MockRoom.csproj
 
-  LexCore.Client/             # license client library — ships with the app
-    ILicenseProvider.cs
-    LicenseResult.cs / LicenseStatus.cs
-    LexCoreProvider.cs        # ILicenseProvider implementation
-    LexCoreClient.cs          # HTTP client (cert pinning, request signing)
-    MachineFingerprint.cs     # CPU + mobo + MAC + drive + OS GUID → HMAC hash
-    VmDetector.cs             # CPUID / SMBIOS / MAC OUI VM detection
-    SecureTokenStore.cs       # DPAPI (Win) / AES-GCM (Linux) token storage
-    LicenseKeyVerifier.cs     # offline ECDSA P-256 key signature check
-    ClockDriftGuard.cs        # server-time drift detection
-    LexCore.Client.csproj
+  MockRoom.Core/              # pure domain + services (no Avalonia/Silk.NET)
+    Units/ Geometry/ Items/ Rooms/ Spatial/ Rendering/ Persistence/
+    MockRoom.Core.csproj
 
 tests/
   MockRoom.Tests/
-    LicensingTests.cs
     MockRoom.Tests.csproj
 
 MockRoom.sln
@@ -122,7 +109,6 @@ bump it there and every artifact name follows.
 - All tests in `tests/MockRoom.Tests/`
 - Test files named `<Subject>Tests.cs`
 - Use **xunit** — no MSTest or NUnit
-- Test the licensing layer via `ILicenseProvider` stubs, not real LexCore server calls
 - Every new public type or method needs at least one test
 - Run `dotnet test` before committing
 
@@ -133,7 +119,7 @@ bump it there and every artifact name follows.
 - No `Assembly.Load`, `Type.GetType`, or `Activator.CreateInstance`
 - No unbound generic reflection (`typeof(T).MakeGenericType(...)`)
 - Avalonia XAML uses compiled bindings only — `{Binding}` without `x:DataType` will fail at AOT
-- P/Invoke is fine (Silk.NET and LexCore.Client both use it)
+- P/Invoke is fine (Silk.NET uses it)
 - Trim-unsafe code must be annotated with `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`
 
 ---
@@ -154,7 +140,7 @@ bump it there and every artifact name follows.
 
 ## Agent-specific rules
 
-- **Never commit** real LexCore server URLs, ECDSA private keys, admin API keys, or any credentials
-- **Licensing abstraction first** — new licensing features go through `ILicenseProvider`, not directly in UI code
+- **Never commit** credentials, private keys, or secrets of any kind
+- **Domain-first** — new domain logic goes in `MockRoom.Core` (UI-free, testable), not in UI code
 - **NativeAOT compatibility** — every change must remain AOT-publishable; verify with `dotnet publish /p:PublishAot=true` if in doubt
 - Before committing, run `dotnet test` — all tests must pass
