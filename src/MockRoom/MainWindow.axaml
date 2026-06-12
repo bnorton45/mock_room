@@ -1,0 +1,186 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:MockRoom.ViewModels"
+        xmlns:ctrl="clr-namespace:MockRoom.Controls"
+        x:Class="MockRoom.MainWindow"
+        x:Name="Root"
+        x:DataType="vm:RoomEditorViewModel"
+        Title="MockRoom"
+        Width="1280" Height="720"
+        MinWidth="900" MinHeight="600">
+
+    <DockPanel>
+        <!-- Title bar -->
+        <Border DockPanel.Dock="Top" Background="#202830" Padding="12,8">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Text="MockRoom" FontSize="18" FontWeight="SemiBold"
+                           Foreground="White" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Name="LicenseBadge" FontSize="12"
+                           Foreground="#9FE3A0" VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <!-- Left tool panel -->
+        <Border DockPanel.Dock="Left" Width="300" Background="#1A1F25" Padding="14">
+            <ScrollViewer>
+                <StackPanel Spacing="16">
+
+                    <!-- File -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="FILE" FontSize="11" Foreground="#7A828C" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button x:Name="OpenButton" Content="Open" />
+                            <Button x:Name="SaveButton" Content="Save" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- Units -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="UNITS" FontSize="11" Foreground="#7A828C" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <RadioButton Content="Metric" GroupName="units"
+                                         IsChecked="{Binding IsMetric}" Command="{Binding SetMetricCommand}" />
+                            <RadioButton Content="Imperial" GroupName="units"
+                                         IsChecked="{Binding IsImperial}" Command="{Binding SetImperialCommand}" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- Room dimensions -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="ROOM DIMENSIONS" FontSize="11" Foreground="#7A828C" />
+                        <TextBlock Text="{Binding UnitHint}" FontSize="10" Foreground="#5E666F"
+                                   TextWrapping="Wrap" />
+                        <Grid ColumnDefinitions="60,*" RowDefinitions="Auto,Auto,Auto">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Width" VerticalAlignment="Center" Margin="0,0,0,6" />
+                            <TextBox  Grid.Row="0" Grid.Column="1" Text="{Binding WidthText}" Margin="0,0,0,6" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Length" VerticalAlignment="Center" Margin="0,0,0,6" />
+                            <TextBox  Grid.Row="1" Grid.Column="1" Text="{Binding LengthText}" Margin="0,0,0,6" />
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Height" VerticalAlignment="Center" />
+                            <TextBox  Grid.Row="2" Grid.Column="1" Text="{Binding HeightText}" />
+                        </Grid>
+                        <Button Content="Apply dimensions" HorizontalAlignment="Stretch"
+                                Command="{Binding ApplyDimensionsCommand}" />
+                        <TextBlock Text="{Binding DimensionError}" Foreground="#E06C6C" FontSize="11"
+                                   TextWrapping="Wrap" IsVisible="{Binding HasDimensionError}" />
+                    </StackPanel>
+
+                    <!-- Add a box -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="ADD A BOX" FontSize="11" Foreground="#7A828C" />
+                        <TextBox Text="{Binding NewItemName}" Watermark="Name (e.g. Bed, Desk)" />
+                        <Button Content="Add box" HorizontalAlignment="Stretch"
+                                Command="{Binding AddBoxCommand}" />
+                        <TextBlock Text="Adds a 1 m box you can rename, resize, and drag."
+                                   FontSize="10" Foreground="#5E666F" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <!-- Placement -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="PLACEMENT" FontSize="11" Foreground="#7A828C" />
+                        <CheckBox Content="Snap to grid" IsChecked="{Binding SnapEnabled}" />
+                        <TextBlock Text="Drag items in the plan to move them." FontSize="10"
+                                   Foreground="#5E666F" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <!-- Selection / item properties -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="SELECTED ITEM" FontSize="11" Foreground="#7A828C" />
+                        <TextBlock Text="{Binding SelectedItem.Name, FallbackValue='(none)', TargetNullValue='(none)'}"
+                                   Foreground="#C9D1D9" />
+
+                        <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto,Auto,Auto"
+                              IsEnabled="{Binding HasSelection}">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Width" VerticalAlignment="Center" Margin="0,0,0,6" />
+                            <TextBox  Grid.Row="0" Grid.Column="1" Text="{Binding ItemWidthText}" Margin="0,0,0,6" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Depth" VerticalAlignment="Center" Margin="0,0,0,6" />
+                            <TextBox  Grid.Row="1" Grid.Column="1" Text="{Binding ItemDepthText}" Margin="0,0,0,6" />
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Height" VerticalAlignment="Center" Margin="0,0,0,6" />
+                            <TextBox  Grid.Row="2" Grid.Column="1" Text="{Binding ItemHeightText}" Margin="0,0,0,6" />
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Rotate°" VerticalAlignment="Center" />
+                            <TextBox  Grid.Row="3" Grid.Column="1" Text="{Binding ItemRotationText}" />
+                        </Grid>
+
+                        <Button Content="Apply size" HorizontalAlignment="Stretch"
+                                IsEnabled="{Binding HasSelection}"
+                                Command="{Binding ApplyItemCommand}" />
+                        <TextBlock Text="{Binding ItemError}" Foreground="#E06C6C" FontSize="11"
+                                   TextWrapping="Wrap" IsVisible="{Binding HasItemError}" />
+                        <Button Content="Remove selected" HorizontalAlignment="Stretch"
+                                Command="{Binding RemoveSelectedCommand}" />
+                    </StackPanel>
+
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <!-- Center: switchable 2D floor plan / 3D viewport with usable-area readout -->
+        <DockPanel Background="#11151A">
+
+            <!-- View toggle -->
+            <Border DockPanel.Dock="Top" Background="#161B21" Padding="10,6">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <RadioButton Content="2D plan" GroupName="view" IsChecked="{Binding Is2D}" />
+                    <RadioButton Content="3D view" GroupName="view" IsChecked="{Binding Is3D}" />
+                </StackPanel>
+            </Border>
+
+            <Grid>
+                <ctrl:FloorPlan2DControl x:Name="Plan"
+                    IsVisible="{Binding Is2D}"
+                    Room="{Binding Room}"
+                    RenderVersion="{Binding RenderVersion}"
+                    SpaceReport="{Binding LastReport}"
+                    SelectedItem="{Binding SelectedItem, Mode=TwoWay}" />
+
+                <ctrl:Viewport3DControl x:Name="View3D"
+                    IsVisible="{Binding Is3D}"
+                    Room="{Binding Room}"
+                    RenderVersion="{Binding RenderVersion}"
+                    SpaceReport="{Binding LastReport}"
+                    SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
+                    CameraMode="{Binding CameraMode}"
+                    EyeHeight="{Binding EyeHeightMeters, Mode=TwoWay}" />
+
+                <!-- Transparent input layer: GL surfaces aren't hit-testable, so this
+                     forwards drag/zoom to the viewport. Sits below the corner panels
+                     in z-order so their buttons and slider stay clickable. -->
+                <Border x:Name="View3DInput" IsVisible="{Binding Is3D}" Background="Transparent" />
+
+                <!-- Usable-space HUD (upper-right) -->
+                <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="16"
+                        Background="#CC202830" CornerRadius="6" Padding="12,10">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="USABLE SPACE" FontSize="10" Foreground="#7A828C" />
+                        <TextBlock Text="{Binding FreeAreaText}" FontSize="22" FontWeight="SemiBold"
+                                   Foreground="#5AB0FF" />
+                        <TextBlock FontSize="10" Foreground="#9AA0A6">
+                            <Run Text="of" /><Run Text="{Binding TotalAreaText}" /><Run Text=" total" />
+                        </TextBlock>
+                        <TextBlock FontSize="10" Foreground="#9AA0A6">
+                            <Run Text="used: " /><Run Text="{Binding UsedAreaText}" />
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <!-- 3D camera controls (lower-left, only in 3D) -->
+                <Border IsVisible="{Binding Is3D}" HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                        Margin="16" Background="#CC202830" CornerRadius="6" Padding="12,10">
+                    <StackPanel Spacing="8" Width="220">
+                        <TextBlock Text="CAMERA" FontSize="10" Foreground="#7A828C" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <RadioButton Content="First-person" GroupName="cam"
+                                         IsChecked="{Binding IsFirstPerson}" Command="{Binding SetFirstPersonCommand}" />
+                            <RadioButton Content="Orbit" GroupName="cam"
+                                         IsChecked="{Binding IsOrbit}" Command="{Binding SetOrbitCommand}" />
+                        </StackPanel>
+                        <TextBlock Text="Eye height" FontSize="10" Foreground="#9AA0A6" />
+                        <Slider Minimum="0.1" Maximum="{Binding EyeHeightMaxMeters}"
+                                Value="{Binding EyeHeightMeters}" IsEnabled="{Binding IsFirstPerson}" />
+                        <TextBlock Text="Drag to look around · wheel to zoom (orbit) · click an item to select."
+                                   FontSize="10" Foreground="#5E666F" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </DockPanel>
+    </DockPanel>
+</Window>

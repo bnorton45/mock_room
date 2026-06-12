@@ -1,0 +1,132 @@
+using System;
+using System.Linq;
+using MockRoom.Core.Geometry;
+using MockRoom.Core.Items;
+using MockRoom.Core.Rooms;
+using MockRoom.Core.Rendering;
+using MockRoom.Core.Spatial;
+using MockRoom.Core.Units;
+using Xunit;
+
+namespace MockRoom.Tests;
+
+public class RoomMeshBuilderTests
+{
+    private const int FloorVerts = 6;     // 1 quad
+    private const int WallVerts = 6;      // 1 quad per undoored wall
+    private const int BoxVerts = 36;      // 6 faces
+
+    private static Room EmptyRoom() => new(RoomDimensions.FromMeters(5, 4, 2.5));
+
+    [Fact]
+    public void EmptyRoom_HasFloorPlusFourWalls()
+    {
+        var mesh = RoomMeshBuilder.Build(EmptyRoom());
+
+        Assert.Equal(FloorVerts + 4 * WallVerts, mesh.VertexCount); // 30
+        Assert.Equal(mesh.VertexCount * RoomMeshBuilder.FloatsPerVertex, mesh.Vertices.Length);
+    }
+
+    [Fact]
+    public void AddingABox_AddsACuboid()
+    {
+        var room = EmptyRoom();
+        var side = Length.FromMeters(1);
+        room.AddItem(new BoxItem("Box", ItemCategory.Custom, side, side, side) { Position = new Vec2(2.5, 2) });
+
+        var mesh = RoomMeshBuilder.Build(room);
+
+        Assert.Equal(FloorVerts + 4 * WallVerts + BoxVerts, mesh.VertexCount); // 66
+    }
+
+    [Fact]
+    public void CenteredDoor_SplitsItsWallIntoThreePanels()
+    {
+        var room = EmptyRoom();
+        // A 1 m wide, 2 m tall door centered on the 5 m south wall (does not reach the 2.5 m ceiling).
+        room.AddDoor(new Door(WallSide.South, Length.FromMeters(2.5), Length.FromMeters(1), Length.FromMeters(2)));
+
+        var mesh = RoomMeshBuilder.Build(room);
+
+        // Floor + 3 plain walls + doored wall (left panel + right panel + lintel = 3 quads).
+        var dooredWallVerts = 3 * 6;
+        Assert.Equal(FloorVerts + 3 * WallVerts + dooredWallVerts, mesh.VertexCount); // 42
+    }
+
+    [Fact]
+    public void ItemCuboid_ExtrudesToItemHeight()
+    {
+        var room = EmptyRoom();
+        var footprint = Length.FromMeters(1);
+        var height = Length.FromMeters(0.75);
+        room.AddItem(new BoxItem("Stool", ItemCategory.Custom, footprint, footprint, height) { Position = new Vec2(2.5, 2) });
+
+        var mesh = RoomMeshBuilder.Build(room);
+
+        // Some vertex should sit exactly at the box's top (y = 0.75), proving extrusion by Height.
+        var hasTop = false;
+        for (var i = 0; i < mesh.Vertices.Length; i += RoomMeshBuilder.FloatsPerVertex)
+        {
+            if (Math.Abs(mesh.Vertices[i + 1] - 0.75f) < 1e-4f)
+            {
+                hasTop = true;
+                break;
+            }
+        }
+
+        Assert.True(hasTop);
+    }
+
+    [Fact]
+    public void SelectedItem_ChangesItsColorWithoutChangingGeometry()
+    {
+        var room = EmptyRoom();
+        var side = Length.FromMeters(1);
+        var item = new BoxItem("Box", ItemCategory.Custom, side, side, side) { Position = new Vec2(2.5, 2) };
+        room.AddItem(item);
+
+        var plain = RoomMeshBuilder.Build(room);
+        var highlighted = RoomMeshBuilder.Build(room, freeFloor: null, selected: item);
+
+        // Same triangles (highlight only recolors), but the vertex data differs.
+        Assert.Equal(plain.VertexCount, highlighted.VertexCount);
+        Assert.NotEqual(plain.Vertices, highlighted.Vertices);
+    }
+
+    [Fact]
+    public void SelectingAnUnrelatedItem_LeavesTheMeshUnchanged()
+    {
+        var room = EmptyRoom();
+        var side = Length.FromMeters(1);
+        room.AddItem(new BoxItem("Box", ItemCategory.Custom, side, side, side) { Position = new Vec2(2.5, 2) });
+        var notInRoom = new BoxItem("Other", ItemCategory.Custom, side, side, side);
+
+        var plain = RoomMeshBuilder.Build(room);
+        var withSelection = RoomMeshBuilder.Build(room, freeFloor: null, selected: notInRoom);
+
+        Assert.Equal(plain.Vertices, withSelection.Vertices);
+    }
+
+    [Fact]
+    public void FreeFloorGrid_AddsBlueOverlayAboveTheFloor()
+    {
+        var room = EmptyRoom();
+        var grid = new OccupancyGridSpaceCalculator().Compute(room).Grid;
+
+        var plain = RoomMeshBuilder.Build(room);
+        var shaded = RoomMeshBuilder.Build(room, grid);
+
+        // The overlay adds geometry, all of it lifted just above the floor (y > 0).
+        Assert.True(shaded.VertexCount > plain.VertexCount);
+
+        var liftedVerts = 0;
+        for (var i = 0; i < shaded.Vertices.Length; i += RoomMeshBuilder.FloatsPerVertex)
+        {
+            var y = shaded.Vertices[i + 1];
+            if (y > 0f && y < 0.01f)
+                liftedVerts++;
+        }
+
+        Assert.True(liftedVerts > 0);
+    }
+}
