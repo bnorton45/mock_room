@@ -1,8 +1,8 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using MockRoom.Controls;
 using MockRoom.ViewModels;
 
 namespace MockRoom;
@@ -15,7 +15,7 @@ public partial class MainWindow : Window
     };
 
     private readonly RoomEditorViewModel _viewModel;
-    // Guard against the ColorPicker ↔ ViewModel feedback loop.
+    private ColorPickerWindow? _colorPickerWindow;
     private bool _syncingColor;
 
     public MainWindow()
@@ -26,21 +26,41 @@ public partial class MainWindow : Window
 
         Plan.ItemDragged += (item, position) => _viewModel.DragItemTo(item, position);
 
-        // ColorPicker → ViewModel: push user's choice to the paint target.
-        ColorPicker.ColorChanged += (_, e) =>
+        // Swatch button: toggle the floating color picker window.
+        ColorSwatchButton.Click += (_, _) =>
         {
-            if (_syncingColor) return;
-            _syncingColor = true;
-            _viewModel.SelectedColor = e.NewColor;
-            _syncingColor = false;
+            if (_colorPickerWindow != null)
+            {
+                _colorPickerWindow.Close();
+                return;
+            }
+
+            _colorPickerWindow = new ColorPickerWindow();
+            _colorPickerWindow.SetColor(_viewModel.SelectedColor);
+
+            // Position it just to the right of the left sidebar.
+            var mainPos = Position;
+            _colorPickerWindow.Position = new Avalonia.PixelPoint(
+                mainPos.X + 310, mainPos.Y + 200);
+
+            // Picker → ViewModel.
+            _colorPickerWindow.ColorPicked += color =>
+            {
+                if (_syncingColor) return;
+                _syncingColor = true;
+                _viewModel.SelectedColor = color;
+                _syncingColor = false;
+            };
+
+            _colorPickerWindow.Closed += (_, _) => _colorPickerWindow = null;
+            _colorPickerWindow.Show(this);
         };
 
-        // ViewModel → ColorPicker: when the selection changes, seed the picker with
-        // the target's existing color so the ring starts at the right position.
+        // ViewModel → open picker: when selection changes, reset the picker's color.
         _viewModel.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(RoomEditorViewModel.SelectedColor) && !_syncingColor)
-                ColorPicker.Color = _viewModel.SelectedColor;
+                _colorPickerWindow?.SetColor(_viewModel.SelectedColor);
         };
 
         OpenButton.Click += OnOpenClick;

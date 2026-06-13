@@ -195,32 +195,16 @@
                                 Command="{Binding RemoveSelectedCommand}" />
                     </StackPanel>
 
-                    <!-- Paint: unified color picker for any selected surface or item -->
+                    <!-- Paint: color swatch opens a floating ColorPickerWindow -->
                     <StackPanel Spacing="6" IsVisible="{Binding HasPaintTarget}">
                         <TextBlock Text="PAINT" FontSize="11" Foreground="#7A828C" />
                         <TextBlock Text="{Binding SelectedTargetLabel}" Foreground="#C9D1D9" FontSize="12" />
-
-                        <!-- Color swatch: shows current color, click to toggle the wheel -->
-                        <Button Command="{Binding ToggleColorPickerCommand}"
+                        <!-- Swatch shows the current color; clicking opens the popup picker -->
+                        <Button x:Name="ColorSwatchButton"
                                 Background="{Binding SelectedColorBrush}"
                                 Width="80" Height="32"
                                 CornerRadius="4" Padding="0" HorizontalAlignment="Left"
-                                ToolTip.Tip="Click to open / close the color wheel" />
-
-                        <!-- Color wheel — wired in code-behind via ColorChanged event
-                             so it is not subject to compiled-binding TwoWay issues.
-                             IsColorPaletteVisible=False + SelectedIndex=0 lands on
-                             the Spectrum (ring) tab immediately. -->
-                        <Border IsVisible="{Binding IsColorPickerOpen}"
-                                Background="#202830" CornerRadius="6" Padding="8">
-                            <ColorView x:Name="ColorPicker"
-                                       ColorSpectrumShape="Ring"
-                                       IsAlphaEnabled="False"
-                                       IsAlphaVisible="False"
-                                       IsColorPaletteVisible="False"
-                                       SelectedIndex="0"
-                                       HorizontalAlignment="Stretch" />
-                        </Border>
+                                ToolTip.Tip="Click to open color picker" />
                     </StackPanel>
 
                     <!-- Hint when nothing is selected -->
