@@ -103,34 +103,43 @@
 
                         <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto"
                               IsEnabled="{Binding HasOpeningSelection}">
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Offset" VerticalAlignment="Center" Margin="0,0,0,6" />
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Offset" VerticalAlignment="Center" Margin="0,0,0,6"
+                                       ToolTip.Tip="Distance from the wall start to the near edge of the opening. Type 0 to place it flush against the wall corner." />
                             <TextBox  Grid.Row="0" Grid.Column="1" Text="{Binding OpeningOffsetText}" Margin="0,0,0,6" />
                             <TextBlock Grid.Row="1" Grid.Column="0" Text="Width" VerticalAlignment="Center" Margin="0,0,0,6" />
                             <TextBox  Grid.Row="1" Grid.Column="1" Text="{Binding OpeningWidthText}" Margin="0,0,0,6" />
                             <TextBlock Grid.Row="2" Grid.Column="0" Text="Height" VerticalAlignment="Center" Margin="0,0,0,6" />
                             <TextBox  Grid.Row="2" Grid.Column="1" Text="{Binding OpeningHeightText}" Margin="0,0,0,6" />
-                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Sill" VerticalAlignment="Center" Margin="0,0,0,6" />
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Sill" VerticalAlignment="Center" Margin="0,0,0,6"
+                                       ToolTip.Tip="Distance from the floor to the bottom of the window opening." />
                             <TextBox  Grid.Row="3" Grid.Column="1" Text="{Binding OpeningSillText}" Margin="0,0,0,6"
                                       IsEnabled="{Binding OpeningIsWindow}" />
-                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Hinge" VerticalAlignment="Center" />
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Hinge" VerticalAlignment="Center"
+                                       IsVisible="{Binding OpeningHasHinge}" />
                             <ComboBox Grid.Row="4" Grid.Column="1" HorizontalAlignment="Stretch"
                                       ItemsSource="{Binding HingeSides}"
-                                      SelectedItem="{Binding OpeningHinge}" />
+                                      SelectedItem="{Binding OpeningHinge}"
+                                      IsVisible="{Binding OpeningHasHinge}" />
                         </Grid>
 
-                        <!-- Window frame widths (each side independent) -->
-                        <StackPanel Spacing="6" IsVisible="{Binding OpeningIsWindow}">
+                        <!-- Frame widths: doors get top/left/right; windows get all four sides -->
+                        <StackPanel Spacing="6" IsVisible="{Binding OpeningHasFrame}">
                             <TextBlock Text="FRAME (per side)" FontSize="10" Foreground="#7A828C" />
                             <Grid ColumnDefinitions="50,*,50,*" RowDefinitions="Auto,Auto">
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Top" VerticalAlignment="Center" Margin="0,0,0,6" />
                                 <TextBox  Grid.Row="0" Grid.Column="1" Text="{Binding FrameTopText}" Margin="0,0,6,6" />
-                                <TextBlock Grid.Row="0" Grid.Column="2" Text="Bottom" VerticalAlignment="Center" Margin="0,0,0,6" />
-                                <TextBox  Grid.Row="0" Grid.Column="3" Text="{Binding FrameBottomText}" Margin="0,0,0,6" />
+                                <TextBlock Grid.Row="0" Grid.Column="2" Text="Bottom" VerticalAlignment="Center" Margin="0,0,0,6"
+                                           IsVisible="{Binding OpeningIsWindow}" />
+                                <TextBox  Grid.Row="0" Grid.Column="3" Text="{Binding FrameBottomText}" Margin="0,0,0,6"
+                                          IsVisible="{Binding OpeningIsWindow}" />
                                 <TextBlock Grid.Row="1" Grid.Column="0" Text="Left" VerticalAlignment="Center" />
                                 <TextBox  Grid.Row="1" Grid.Column="1" Text="{Binding FrameLeftText}" Margin="0,0,6,0" />
                                 <TextBlock Grid.Row="1" Grid.Column="2" Text="Right" VerticalAlignment="Center" />
                                 <TextBox  Grid.Row="1" Grid.Column="3" Text="{Binding FrameRightText}" />
                             </Grid>
+                            <TextBlock Text="Sill = distance from the floor to the window bottom."
+                                       FontSize="10" Foreground="#5E666F" TextWrapping="Wrap"
+                                       IsVisible="{Binding OpeningIsWindow}" />
                         </StackPanel>
                         <Button Content="Apply opening" HorizontalAlignment="Stretch"
                                 IsEnabled="{Binding HasOpeningSelection}"
@@ -206,12 +215,24 @@
                     SpaceReport="{Binding LastReport}"
                     SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
                     CameraMode="{Binding CameraMode}"
-                    EyeHeight="{Binding EyeHeightMeters, Mode=TwoWay}" />
+                    EyeHeight="{Binding EyeHeightMeters, Mode=TwoWay}"
+                    ViewpointX="{Binding ViewpointX}"
+                    ViewpointZ="{Binding ViewpointZ}"
+                    ViewpointYaw="{Binding ViewpointYaw}"
+                    ViewpointVersion="{Binding ViewpointVersion}" />
 
                 <!-- Transparent input layer: GL surfaces aren't hit-testable, so this
                      forwards drag/zoom to the viewport. Sits below the corner panels
                      in z-order so their buttons and slider stay clickable. -->
                 <Border x:Name="View3DInput" IsVisible="{Binding Is3D}" Background="Transparent" />
+
+                <!-- Item name badges rendered above the 3D scene; IsHitTestVisible=False
+                     lets all pointer events fall through to View3DInput. -->
+                <ctrl:ItemLabels3DControl x:Name="Labels3D"
+                    IsVisible="{Binding Is3D}"
+                    IsHitTestVisible="False"
+                    Room="{Binding Room}"
+                    RenderVersion="{Binding RenderVersion}" />
 
                 <!-- Usable-space HUD (upper-right) -->
                 <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="16"
@@ -243,6 +264,16 @@
                         <TextBlock Text="Eye height" FontSize="10" Foreground="#9AA0A6" />
                         <Slider Minimum="0.1" Maximum="{Binding EyeHeightMaxMeters}"
                                 Value="{Binding EyeHeightMeters}" IsEnabled="{Binding IsFirstPerson}" />
+                        <StackPanel IsVisible="{Binding IsFirstPerson}" Spacing="4">
+                            <TextBlock Text="VIEWPOINT" FontSize="10" Foreground="#9AA0A6" />
+                            <TextBlock Text="{Binding ViewpointLabel}" FontSize="10" Foreground="#C9D1D9" />
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Button Content="◀ Prev" Command="{Binding PrevViewpointCommand}"
+                                        Padding="8,3" FontSize="11" />
+                                <Button Content="Next ▶" Command="{Binding NextViewpointCommand}"
+                                        Padding="8,3" FontSize="11" />
+                            </StackPanel>
+                        </StackPanel>
                         <TextBlock Text="Drag to look around · wheel to zoom (orbit) · click an item to select."
                                    FontSize="10" Foreground="#5E666F" TextWrapping="Wrap" />
                     </StackPanel>

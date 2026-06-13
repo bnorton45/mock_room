@@ -38,7 +38,9 @@ public sealed class WallOpening
     public Length SillHeight { get; set; }
     public HingeSide HingeSide { get; set; }
 
-    // Window frame widths, added around the pane on each side. Zero for doors/closets.
+    // Frame widths added around the opening on each side.
+    // Doors use top/left/right only (FrameBottom stays zero — the floor is the threshold).
+    // Closet doors have no frame. Windows use all four sides.
     public Length FrameTop { get; set; } = Length.Zero;
     public Length FrameBottom { get; set; } = Length.Zero;
     public Length FrameLeft { get; set; } = Length.Zero;

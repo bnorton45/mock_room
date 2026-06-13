@@ -99,4 +99,83 @@ public class CameraTests
         var m = camera.ViewProjection(16f / 9f);
         Assert.True(float.IsFinite(m.M11) && float.IsFinite(m.M44));
     }
+
+    [Fact]
+    public void FirstPersonX_Z_Override_MovesEye()
+    {
+        var camera = new Camera(Room5x4x2_5) { Mode = CameraMode.FirstPerson, EyeHeight = 1.6f };
+
+        camera.FirstPersonX = 1.0f;
+        camera.FirstPersonZ = 0.5f;
+
+        Assert.Equal(1.0f, camera.EyePosition.X, 4);
+        Assert.Equal(0.5f, camera.EyePosition.Z, 4);
+        Assert.Equal(1.6f, camera.EyePosition.Y, 4);
+    }
+
+    [Fact]
+    public void BuildViewpoints_Rectangle_Returns9Viewpoints()
+    {
+        var viewpoints = Camera.BuildViewpoints(5f, 4f);
+
+        // 1 center + 4 corners + 4 wall centres = 9
+        Assert.Equal(9, viewpoints.Count);
+    }
+
+    [Fact]
+    public void BuildViewpoints_FirstViewpoint_IsCenter()
+    {
+        var viewpoints = Camera.BuildViewpoints(6f, 4f);
+
+        var center = viewpoints[0];
+        Assert.Equal("Center", center.Name);
+        Assert.Equal(3f, center.X, 3); // 6 / 2
+        Assert.Equal(2f, center.Z, 3); // 4 / 2
+    }
+
+    [Fact]
+    public void BuildViewpoints_WallAndCorner_AreInsetFromSurface()
+    {
+        var viewpoints = Camera.BuildViewpoints(6f, 4f);
+
+        // Every non-centre viewpoint must be strictly inside the room (0 < X < W, 0 < Z < L).
+        foreach (var vp in viewpoints.Skip(1))
+        {
+            Assert.True(vp.X > 0f && vp.X < 6f, $"{vp.Name}.X={vp.X} not inside [0,6]");
+            Assert.True(vp.Z > 0f && vp.Z < 4f, $"{vp.Name}.Z={vp.Z} not inside [0,4]");
+        }
+    }
+
+    [Fact]
+    public void BuildViewpoints_Yaw_PointsTowardRoomCenter()
+    {
+        var viewpoints = Camera.BuildViewpoints(6f, 4f);
+        var cx = 3f;
+        var cz = 2f;
+
+        foreach (var vp in viewpoints.Skip(1))
+        {
+            // forward direction from this yaw
+            var fwdX = MathF.Sin(vp.Yaw);
+            var fwdZ = MathF.Cos(vp.Yaw);
+            var toCenterX = cx - vp.X;
+            var toCenterZ = cz - vp.Z;
+            var dot = fwdX * toCenterX + fwdZ * toCenterZ;
+            Assert.True(dot > 0f, $"{vp.Name} yaw does not point toward center (dot={dot:F3})");
+        }
+    }
+
+    [Fact]
+    public void BuildViewpoints_ArbitraryPolygon_ReturnsCorrectCount()
+    {
+        // Triangle (3 vertices) → 2*3 + 1 = 7 viewpoints
+        var viewpoints = Camera.BuildViewpoints(
+        [
+            new(0f, 0f),
+            new(4f, 0f),
+            new(2f, 4f),
+        ]);
+
+        Assert.Equal(7, viewpoints.Count);
+    }
 }

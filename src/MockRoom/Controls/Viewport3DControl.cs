@@ -54,6 +54,35 @@ public sealed class Viewport3DControl : OpenGlControlBase
         AvaloniaProperty.Register<Viewport3DControl, RoomItem?>(
             nameof(SelectedItem), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
 
+    /// <summary>
+    /// Incremented whenever the camera changes (drag, zoom, eye height, mode switch).
+    /// Overlay controls that project world positions to screen can observe this to know
+    /// when to repaint.
+    /// </summary>
+    public static readonly StyledProperty<int> CameraVersionProperty =
+        AvaloniaProperty.Register<Viewport3DControl, int>(nameof(CameraVersion));
+
+    /// <summary>World-space X override for the first-person eye position.</summary>
+    public static readonly StyledProperty<double> ViewpointXProperty =
+        AvaloniaProperty.Register<Viewport3DControl, double>(nameof(ViewpointX));
+
+    /// <summary>World-space Z override for the first-person eye position.</summary>
+    public static readonly StyledProperty<double> ViewpointZProperty =
+        AvaloniaProperty.Register<Viewport3DControl, double>(nameof(ViewpointZ));
+
+    /// <summary>Initial yaw for the current viewpoint, in radians.</summary>
+    public static readonly StyledProperty<double> ViewpointYawProperty =
+        AvaloniaProperty.Register<Viewport3DControl, double>(nameof(ViewpointYaw));
+
+    /// <summary>
+    /// Incremented by the ViewModel whenever the active viewpoint changes.
+    /// The control uses this as a trigger to apply the new position and reset yaw.
+    /// </summary>
+    public static readonly StyledProperty<int> ViewpointVersionProperty =
+        AvaloniaProperty.Register<Viewport3DControl, int>(nameof(ViewpointVersion));
+
+    private int _appliedViewpointVersion = -1;
+
     private GL? _gl;
     private uint _program;
     private uint _vao;
@@ -109,6 +138,36 @@ public sealed class Viewport3DControl : OpenGlControlBase
         set => SetValue(SelectedItemProperty, value);
     }
 
+    public int CameraVersion
+    {
+        get => GetValue(CameraVersionProperty);
+        private set => SetValue(CameraVersionProperty, value);
+    }
+
+    public double ViewpointX
+    {
+        get => GetValue(ViewpointXProperty);
+        set => SetValue(ViewpointXProperty, value);
+    }
+
+    public double ViewpointZ
+    {
+        get => GetValue(ViewpointZProperty);
+        set => SetValue(ViewpointZProperty, value);
+    }
+
+    public double ViewpointYaw
+    {
+        get => GetValue(ViewpointYawProperty);
+        set => SetValue(ViewpointYawProperty, value);
+    }
+
+    public int ViewpointVersion
+    {
+        get => GetValue(ViewpointVersionProperty);
+        set => SetValue(ViewpointVersionProperty, value);
+    }
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
@@ -121,9 +180,26 @@ public sealed class Viewport3DControl : OpenGlControlBase
 
         if (change.Property == RoomProperty || change.Property == RenderVersionProperty ||
             change.Property == SpaceReportProperty || change.Property == SelectedItemProperty ||
-            change.Property == CameraModeProperty || change.Property == EyeHeightProperty)
+            change.Property == CameraModeProperty || change.Property == EyeHeightProperty ||
+            change.Property == ViewpointVersionProperty)
         {
             RequestNextFrameRendering();
+        }
+
+        if (change.Property == CameraModeProperty || change.Property == EyeHeightProperty)
+            CameraVersion++;
+
+        if (change.Property == ViewpointVersionProperty)
+        {
+            // Apply position and reset yaw immediately so the effect is visible at next render.
+            if (_camera is not null)
+            {
+                _camera.FirstPersonX = (float)ViewpointX;
+                _camera.FirstPersonZ = (float)ViewpointZ;
+                _camera.Yaw = (float)ViewpointYaw;
+                _appliedViewpointVersion = ViewpointVersion;
+            }
+            CameraVersion++;
         }
     }
 
@@ -211,6 +287,16 @@ public sealed class Viewport3DControl : OpenGlControlBase
 
         _camera.Mode = CameraMode;
         _camera.EyeHeight = (float)EyeHeight;
+        _camera.FirstPersonX = (float)ViewpointX;
+        _camera.FirstPersonZ = (float)ViewpointZ;
+
+        // Apply the viewpoint yaw on first render or whenever the viewpoint changes.
+        var ver = ViewpointVersion;
+        if (ver != _appliedViewpointVersion)
+        {
+            _camera.Yaw = (float)ViewpointYaw;
+            _appliedViewpointVersion = ver;
+        }
     }
 
     private unsafe void UploadMeshIfNeeded(GL glApi, Room room)
@@ -266,6 +352,7 @@ public sealed class Viewport3DControl : OpenGlControlBase
             _camera.OrbitPitch += dy * LookSensitivity;
         }
 
+        CameraVersion++;
         RequestNextFrameRendering();
     }
 
@@ -304,7 +391,23 @@ public sealed class Viewport3DControl : OpenGlControlBase
             return;
 
         _camera.OrbitDistance -= (float)wheelDelta * OrbitZoomStep;
+        CameraVersion++;
         RequestNextFrameRendering();
+    }
+
+    /// <summary>
+    /// Projects a world-space point to control-space pixel coordinates.
+    /// Returns null when the point is behind the camera or the camera is not yet initialised.
+    /// </summary>
+    public Point? ProjectToScreen(System.Numerics.Vector3 worldPos)
+    {
+        if (_camera is null) return null;
+        var aspect = (float)(Bounds.Width / Math.Max(1.0, Bounds.Height));
+        var ndc = _camera.WorldToNdc(worldPos, aspect);
+        if (ndc is null) return null;
+        var screenX = (ndc.Value.X + 1f) * 0.5 * Bounds.Width;
+        var screenY = (1f - ndc.Value.Y) * 0.5 * Bounds.Height;
+        return new Point(screenX, screenY);
     }
 
     // --- GL program ------------------------------------------------------
