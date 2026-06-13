@@ -17,13 +17,13 @@ public static class RoomMapper
         var dims = room.Dimensions;
         return new RoomDocument
         {
-            Version = 1,
+            Version = RoomDocument.CurrentVersion,
             WidthMeters = dims.Width.Meters,
             LengthMeters = dims.Length.Meters,
             HeightMeters = dims.Height.Meters,
             PreferredUnits = room.PreferredUnits,
             Items = room.Items.Select(ToDto).ToList(),
-            Doors = room.Doors.Select(ToDto).ToList(),
+            Openings = room.Openings.Select(ToDto).ToList(),
         };
     }
 
@@ -33,8 +33,15 @@ public static class RoomMapper
         var room = new Room(dims, document.PreferredUnits);
         foreach (var item in document.Items)
             room.AddItem(FromDto(item));
-        foreach (var door in document.Doors)
-            room.AddDoor(FromDto(door));
+        // Openings may be absent in older files; the legacy "Doors" list below covers those.
+        foreach (var opening in document.Openings ?? [])
+            room.AddOpening(FromDto(opening));
+        // Upgrade any version-1 doors that an older file stored under "Doors".
+        if (document.Doors is { Count: > 0 })
+        {
+            foreach (var door in document.Doors)
+                room.AddOpening(FromLegacy(door));
+        }
         return room;
     }
 
@@ -66,22 +73,42 @@ public static class RoomMapper
             ColorHex = dto.ColorHex,
         };
 
-    private static DoorDto ToDto(Door door) => new()
+    private static WallOpeningDto ToDto(WallOpening opening) => new()
     {
-        Id = door.Id,
-        Wall = door.Wall,
-        OffsetMeters = door.OffsetAlongWall.Meters,
-        WidthMeters = door.Width.Meters,
-        HeightMeters = door.Height.Meters,
-        SwingClearanceMeters = door.SwingClearance.Meters,
+        Id = opening.Id,
+        Kind = opening.Kind,
+        Wall = opening.Wall,
+        OffsetMeters = opening.OffsetAlongWall.Meters,
+        WidthMeters = opening.Width.Meters,
+        HeightMeters = opening.Height.Meters,
+        SillMeters = opening.SillHeight.Meters,
+        HingeSide = opening.HingeSide,
+        FrameTopMeters = opening.FrameTop.Meters,
+        FrameBottomMeters = opening.FrameBottom.Meters,
+        FrameLeftMeters = opening.FrameLeft.Meters,
+        FrameRightMeters = opening.FrameRight.Meters,
     };
 
-    private static Door FromDto(DoorDto dto) =>
-        new(dto.Wall,
+    private static WallOpening FromDto(WallOpeningDto dto) =>
+        new(dto.Kind, dto.Wall,
             Length.FromMeters(dto.OffsetMeters),
             Length.FromMeters(dto.WidthMeters),
             Length.FromMeters(dto.HeightMeters),
-            Length.FromMeters(dto.SwingClearanceMeters))
+            Length.FromMeters(dto.SillMeters),
+            dto.HingeSide)
+        {
+            Id = dto.Id,
+            FrameTop = Length.FromMeters(dto.FrameTopMeters),
+            FrameBottom = Length.FromMeters(dto.FrameBottomMeters),
+            FrameLeft = Length.FromMeters(dto.FrameLeftMeters),
+            FrameRight = Length.FromMeters(dto.FrameRightMeters),
+        };
+
+    private static WallOpening FromLegacy(LegacyDoorDto dto) =>
+        new(OpeningKind.Door, dto.Wall,
+            Length.FromMeters(dto.OffsetMeters),
+            Length.FromMeters(dto.WidthMeters),
+            Length.FromMeters(dto.HeightMeters))
         {
             Id = dto.Id,
         };

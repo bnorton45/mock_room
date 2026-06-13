@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:MockRoom.ViewModels"
         xmlns:ctrl="clr-namespace:MockRoom.Controls"
+        xmlns:rooms="clr-namespace:MockRoom.Core.Rooms;assembly=MockRoom.Core"
         x:Class="MockRoom.MainWindow"
         x:Name="Root"
         x:DataType="vm:RoomEditorViewModel"
@@ -72,6 +73,72 @@
                                 Command="{Binding AddBoxCommand}" />
                         <TextBlock Text="Adds a 1 m box you can rename, resize, and drag."
                                    FontSize="10" Foreground="#5E666F" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <!-- Openings: doors, closet doors, windows -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="OPENINGS" FontSize="11" Foreground="#7A828C" />
+                        <ComboBox HorizontalAlignment="Stretch"
+                                  ItemsSource="{Binding WallSides}"
+                                  SelectedItem="{Binding OpeningWall}" />
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button Content="+ Door" Command="{Binding AddDoorCommand}" />
+                            <Button Content="+ Closet" Command="{Binding AddClosetDoorCommand}" />
+                            <Button Content="+ Window" Command="{Binding AddWindowCommand}" />
+                        </StackPanel>
+                        <TextBlock Text="Adds an opening on the selected wall. Doors and closets swing 90° into the room."
+                                   FontSize="10" Foreground="#5E666F" TextWrapping="Wrap" />
+
+                        <ListBox MaxHeight="120"
+                                 ItemsSource="{Binding Openings}"
+                                 SelectedItem="{Binding SelectedOpening, Mode=TwoWay}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="rooms:WallOpening">
+                                    <TextBlock>
+                                        <Run Text="{Binding Kind}" /><Run Text=" · " /><Run Text="{Binding Wall}" />
+                                    </TextBlock>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+                              IsEnabled="{Binding HasOpeningSelection}">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Offset" VerticalAlignment="Center" Margin="0,0,0,6" />
+                            <TextBox  Grid.Row="0" Grid.Column="1" Text="{Binding OpeningOffsetText}" Margin="0,0,0,6" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Width" VerticalAlignment="Center" Margin="0,0,0,6" />
+                            <TextBox  Grid.Row="1" Grid.Column="1" Text="{Binding OpeningWidthText}" Margin="0,0,0,6" />
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Height" VerticalAlignment="Center" Margin="0,0,0,6" />
+                            <TextBox  Grid.Row="2" Grid.Column="1" Text="{Binding OpeningHeightText}" Margin="0,0,0,6" />
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Sill" VerticalAlignment="Center" Margin="0,0,0,6" />
+                            <TextBox  Grid.Row="3" Grid.Column="1" Text="{Binding OpeningSillText}" Margin="0,0,0,6"
+                                      IsEnabled="{Binding OpeningIsWindow}" />
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Hinge" VerticalAlignment="Center" />
+                            <ComboBox Grid.Row="4" Grid.Column="1" HorizontalAlignment="Stretch"
+                                      ItemsSource="{Binding HingeSides}"
+                                      SelectedItem="{Binding OpeningHinge}" />
+                        </Grid>
+
+                        <!-- Window frame widths (each side independent) -->
+                        <StackPanel Spacing="6" IsVisible="{Binding OpeningIsWindow}">
+                            <TextBlock Text="FRAME (per side)" FontSize="10" Foreground="#7A828C" />
+                            <Grid ColumnDefinitions="50,*,50,*" RowDefinitions="Auto,Auto">
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Top" VerticalAlignment="Center" Margin="0,0,0,6" />
+                                <TextBox  Grid.Row="0" Grid.Column="1" Text="{Binding FrameTopText}" Margin="0,0,6,6" />
+                                <TextBlock Grid.Row="0" Grid.Column="2" Text="Bottom" VerticalAlignment="Center" Margin="0,0,0,6" />
+                                <TextBox  Grid.Row="0" Grid.Column="3" Text="{Binding FrameBottomText}" Margin="0,0,0,6" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Left" VerticalAlignment="Center" />
+                                <TextBox  Grid.Row="1" Grid.Column="1" Text="{Binding FrameLeftText}" Margin="0,0,6,0" />
+                                <TextBlock Grid.Row="1" Grid.Column="2" Text="Right" VerticalAlignment="Center" />
+                                <TextBox  Grid.Row="1" Grid.Column="3" Text="{Binding FrameRightText}" />
+                            </Grid>
+                        </StackPanel>
+                        <Button Content="Apply opening" HorizontalAlignment="Stretch"
+                                IsEnabled="{Binding HasOpeningSelection}"
+                                Command="{Binding ApplyOpeningCommand}" />
+                        <TextBlock Text="{Binding OpeningError}" Foreground="#E06C6C" FontSize="11"
+                                   TextWrapping="Wrap" IsVisible="{Binding HasOpeningError}" />
+                        <Button Content="Remove opening" HorizontalAlignment="Stretch"
+                                Command="{Binding RemoveOpeningCommand}" />
                     </StackPanel>
 
                     <!-- Placement -->

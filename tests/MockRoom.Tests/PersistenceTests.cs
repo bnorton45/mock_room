@@ -23,12 +23,21 @@ public class PersistenceTests
             Rotation = Math.PI / 6,
             ColorHex = "#3366CC",
         });
-        room.AddDoor(new Door(WallSide.South, Length.FromMeters(3), Length.FromMeters(0.9), Length.FromMeters(2.0)));
+        room.AddOpening(new WallOpening(OpeningKind.Door, WallSide.South,
+            Length.FromMeters(3), Length.FromMeters(0.9), Length.FromMeters(2.0)));
+        room.AddOpening(new WallOpening(OpeningKind.Window, WallSide.East,
+            Length.FromMeters(4), Length.FromMeters(1.2), Length.FromMeters(1.2), Length.FromMeters(0.9))
+        {
+            FrameTop = Length.FromMeters(0.1),
+            FrameBottom = Length.FromMeters(0.2),
+            FrameLeft = Length.FromMeters(0.05),
+            FrameRight = Length.FromMeters(0.15),
+        });
         return room;
     }
 
     [Fact]
-    public async Task RoundTrip_PreservesRoomItemsAndDoors()
+    public async Task RoundTrip_PreservesRoomItemsAndOpenings()
     {
         var repository = new JsonRoomRepository();
         var original = SampleRoom();
@@ -57,11 +66,48 @@ public class PersistenceTests
         Assert.Equal(source.Rotation, item.Rotation, 6);
         Assert.Equal("#3366CC", item.ColorHex);
 
-        Assert.Single(loaded.Doors);
-        var door = loaded.Doors[0];
+        Assert.Equal(2, loaded.Openings.Count);
+        var door = Assert.Single(loaded.Openings, o => o.Kind == OpeningKind.Door);
         Assert.Equal(WallSide.South, door.Wall);
         Assert.Equal(0.9, door.Width.Meters, 6);
         Assert.Equal(2.0, door.Height.Meters, 6);
+
+        var window = Assert.Single(loaded.Openings, o => o.Kind == OpeningKind.Window);
+        Assert.Equal(WallSide.East, window.Wall);
+        Assert.Equal(0.9, window.SillHeight.Meters, 6);
+        Assert.Equal(0.1, window.FrameTop.Meters, 6);
+        Assert.Equal(0.2, window.FrameBottom.Meters, 6);
+        Assert.Equal(0.05, window.FrameLeft.Meters, 6);
+        Assert.Equal(0.15, window.FrameRight.Meters, 6);
+    }
+
+    [Fact]
+    public async Task Load_UpgradesLegacyVersion1Doors()
+    {
+        // A version-1 document stored openings under "doors"; they must load as door openings.
+        const string legacyJson = """
+            {
+              "version": 1,
+              "widthMeters": 6,
+              "lengthMeters": 8,
+              "heightMeters": 2.5,
+              "preferredUnits": "Metric",
+              "items": [],
+              "doors": [
+                { "id": "11111111-1111-1111-1111-111111111111", "wall": "South",
+                  "offsetMeters": 3, "widthMeters": 0.9, "heightMeters": 2.0, "swingClearanceMeters": 0.9 }
+              ]
+            }
+            """;
+        var repository = new JsonRoomRepository();
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(legacyJson));
+
+        var loaded = await repository.LoadAsync(stream);
+
+        var opening = Assert.Single(loaded.Openings);
+        Assert.Equal(OpeningKind.Door, opening.Kind);
+        Assert.Equal(WallSide.South, opening.Wall);
+        Assert.Equal(0.9, opening.Width.Meters, 6);
     }
 
     [Fact]

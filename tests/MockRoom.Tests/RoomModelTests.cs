@@ -70,27 +70,88 @@ public class RoomModelTests
     }
 
     [Fact]
-    public void Door_SwingFootprint_SitsInsideRoomAgainstWall()
+    public void Door_FloorRegion_IsOneQuarterCircleHingedAtTheChosenEnd()
     {
         var dims = RoomDimensions.FromMeters(6, 8, 2.5);
-        var door = new Door(WallSide.South, Length.FromMeters(3), Length.FromMeters(0.9), Length.FromMeters(2.0));
+        var door = new WallOpening(OpeningKind.Door, WallSide.South,
+            Length.FromMeters(3), Length.FromMeters(0.9), Length.FromMeters(2.0));
 
-        var swing = door.SwingFootprint(dims);
-        Assert.Equal(3.0, swing.Center.X, 6);          // centered at the offset
-        Assert.True(swing.Center.Y > 0 && swing.Center.Y < 8); // projects into the room
-        Assert.Equal(0.9 * 0.9, swing.Area.SquareMeters, 6);   // width × clearance (clearance defaults to width)
+        var regions = door.FloorRegions(dims);
+        var arc = Assert.Single(regions);
+        Assert.Equal(0.9, arc.Radius, 6);
+        Assert.Equal(2.55, arc.Hinge.X, 6);   // hinged at offset - width/2 (HingeSide.Start)
+        Assert.Equal(0, arc.Hinge.Y, 6);
+        Assert.Equal(Math.PI * 0.9 * 0.9 / 4, arc.Area.SquareMeters, 6);
+        Assert.True(arc.Contains(new Vec2(2.7, 0.2)));   // swept into the room
+        Assert.False(arc.Contains(new Vec2(2.4, 0.2)));  // behind the hinge, not swept
     }
 
     [Fact]
-    public void Door_EastWall_SwingRotatedAlongLength()
+    public void Door_HingeSideEnd_FlipsTheArcToTheOtherEnd()
     {
         var dims = RoomDimensions.FromMeters(6, 8, 2.5);
-        var door = new Door(WallSide.East, Length.FromMeters(4), Length.FromMeters(1.0), Length.FromMeters(2.0));
+        var door = new WallOpening(OpeningKind.Door, WallSide.South,
+            Length.FromMeters(3), Length.FromMeters(0.9), Length.FromMeters(2.0),
+            hingeSide: HingeSide.End);
 
-        var swing = door.SwingFootprint(dims);
-        var (minX, minY, maxX, maxY) = swing.Bounds();
-        // Door width (1.0) lies along Y; clearance (1.0) along X near the east wall (X=6).
-        Assert.Equal(1.0, maxY - minY, 6);
-        Assert.True(maxX > 5.9); // hugs the east wall
+        var arc = Assert.Single(door.FloorRegions(dims));
+        Assert.Equal(3.45, arc.Hinge.X, 6);  // hinged at offset + width/2
+        Assert.True(arc.Contains(new Vec2(3.3, 0.2)));
+        Assert.False(arc.Contains(new Vec2(3.6, 0.2)));
+    }
+
+    [Fact]
+    public void ClosetDoor_FloorRegion_IsTwoHalfWidthLeaves()
+    {
+        var dims = RoomDimensions.FromMeters(6, 8, 2.5);
+        var closet = new WallOpening(OpeningKind.ClosetDoor, WallSide.South,
+            Length.FromMeters(3), Length.FromMeters(1.5), Length.FromMeters(2.0));
+
+        var regions = closet.FloorRegions(dims);
+        Assert.Equal(2, regions.Count);
+        Assert.All(regions, arc => Assert.Equal(0.75, arc.Radius, 6));
+        Assert.Equal(2.25, regions[0].Hinge.X, 6);  // hinged at each end
+        Assert.Equal(3.75, regions[1].Hinge.X, 6);
+    }
+
+    [Fact]
+    public void Window_HasNoFloorRegionAndComputesItsTop()
+    {
+        var dims = RoomDimensions.FromMeters(6, 8, 2.5);
+        var window = new WallOpening(OpeningKind.Window, WallSide.South,
+            Length.FromMeters(3), Length.FromMeters(1.2), Length.FromMeters(1.2),
+            Length.FromMeters(0.9));
+
+        Assert.Empty(window.FloorRegions(dims));
+        Assert.Equal(2.1, window.Top.Meters, 6);  // sill + height (no frames)
+    }
+
+    [Fact]
+    public void Window_Frames_AddAroundThePaneInOuterDimensionsAndTop()
+    {
+        var window = new WallOpening(OpeningKind.Window, WallSide.South,
+            Length.FromMeters(3), Length.FromMeters(1.0), Length.FromMeters(1.0),
+            Length.FromMeters(0.8))
+        {
+            FrameTop = Length.FromMeters(0.1),
+            FrameBottom = Length.FromMeters(0.2),
+            FrameLeft = Length.FromMeters(0.05),
+            FrameRight = Length.FromMeters(0.15),
+        };
+
+        Assert.Equal(1.2, window.OuterWidth.Meters, 6);   // pane 1.0 + 0.05 + 0.15
+        Assert.Equal(1.3, window.OuterHeight.Meters, 6);  // pane 1.0 + 0.1 + 0.2
+        Assert.Equal(2.1, window.Top.Meters, 6);          // sill 0.8 + outer height 1.3
+    }
+
+    [Fact]
+    public void Door_HasNoFrameSoOuterEqualsPane()
+    {
+        var door = new WallOpening(OpeningKind.Door, WallSide.South,
+            Length.FromMeters(3), Length.FromMeters(0.9), Length.FromMeters(2.0));
+
+        Assert.Equal(0.9, door.OuterWidth.Meters, 6);
+        Assert.Equal(2.0, door.OuterHeight.Meters, 6);
+        Assert.Equal(2.0, door.Top.Meters, 6);  // sill 0 + height
     }
 }

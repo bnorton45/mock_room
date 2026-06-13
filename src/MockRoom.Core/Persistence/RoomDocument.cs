@@ -4,13 +4,16 @@ namespace MockRoom.Core.Persistence;
 
 /// <summary>
 /// The serializable form of a <see cref="Rooms.Room"/>: dimensions in canonical
-/// meters, the preferred unit system, and the placed items and doors. This is the
-/// root document written to and read from <c>.mockroom</c> files. <see cref="Version"/>
-/// lets future loaders migrate older files.
+/// meters, the preferred unit system, the placed items, and the wall openings (doors,
+/// closet doors, windows). This is the root document written to and read from
+/// <c>.mockroom</c> files. <see cref="Version"/> lets loaders migrate older files;
+/// version-1 files stored openings under <see cref="Doors"/>.
 /// </summary>
 public sealed record RoomDocument
 {
-    public int Version { get; init; } = 1;
+    public const int CurrentVersion = 2;
+
+    public int Version { get; init; } = CurrentVersion;
 
     public double WidthMeters { get; init; }
     public double LengthMeters { get; init; }
@@ -19,5 +22,8 @@ public sealed record RoomDocument
     public UnitSystem PreferredUnits { get; init; }
 
     public List<ItemDto> Items { get; init; } = [];
-    public List<DoorDto> Doors { get; init; } = [];
+    public List<WallOpeningDto> Openings { get; init; } = [];
+
+    /// <summary>Version-1 doors, read for backward compatibility. Never written.</summary>
+    public List<LegacyDoorDto>? Doors { get; init; }
 }

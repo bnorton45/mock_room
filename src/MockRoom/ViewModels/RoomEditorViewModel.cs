@@ -25,6 +25,15 @@ public sealed class RoomEditorViewModel : ViewModelBase
     private const double DefaultBoxMeters = 1.0;
     private const string DefaultBoxColor = "#6E7B8B";
 
+    /// <summary>Default sizes for freshly added openings, in meters.</summary>
+    private const double DefaultDoorWidthMeters = 0.9;
+    private const double DefaultDoorHeightMeters = 2.0;
+    private const double DefaultClosetWidthMeters = 1.5;
+    private const double DefaultWindowWidthMeters = 1.2;
+    private const double DefaultWindowHeightMeters = 1.2;
+    private const double DefaultWindowSillMeters = 0.9;
+    private const double DefaultWindowFrameMeters = 0.05;
+
     private UnitSystem _unitSystem = UnitSystem.Metric;
     private string _newItemName = "";
     private string _widthText = "";
@@ -44,6 +53,18 @@ public sealed class RoomEditorViewModel : ViewModelBase
     private string _itemHeightText = "";
     private string _itemRotationText = "";
     private string? _itemError;
+    private WallOpening? _selectedOpening;
+    private WallSide _openingWall = WallSide.South;
+    private HingeSide _openingHinge = HingeSide.Start;
+    private string _openingOffsetText = "";
+    private string _openingWidthText = "";
+    private string _openingHeightText = "";
+    private string _openingSillText = "";
+    private string _frameTopText = "";
+    private string _frameBottomText = "";
+    private string _frameLeftText = "";
+    private string _frameRightText = "";
+    private string? _openingError;
     private bool _is3D;
     private Core.Rendering.CameraMode _cameraMode = Core.Rendering.CameraMode.FirstPerson;
     private double _eyeHeightMeters = 1.6;
@@ -72,6 +93,11 @@ public sealed class RoomEditorViewModel : ViewModelBase
         ApplyItemCommand = new RelayCommand(_ => ApplyItem(), _ => SelectedItem is not null);
         SetFirstPersonCommand = new RelayCommand(_ => CameraMode = Core.Rendering.CameraMode.FirstPerson);
         SetOrbitCommand = new RelayCommand(_ => CameraMode = Core.Rendering.CameraMode.Orbit);
+        AddDoorCommand = new RelayCommand(_ => AddOpening(OpeningKind.Door));
+        AddClosetDoorCommand = new RelayCommand(_ => AddOpening(OpeningKind.ClosetDoor));
+        AddWindowCommand = new RelayCommand(_ => AddOpening(OpeningKind.Window));
+        RemoveOpeningCommand = new RelayCommand(_ => RemoveSelectedOpening(), _ => SelectedOpening is not null);
+        ApplyOpeningCommand = new RelayCommand(_ => ApplyOpening(), _ => SelectedOpening is not null);
 
         _eyeHeightMaxMeters = Room.Dimensions.Height.Meters;
         RefreshDimensionTexts();
@@ -92,6 +118,18 @@ public sealed class RoomEditorViewModel : ViewModelBase
     public RelayCommand ApplyItemCommand { get; }
     public RelayCommand SetFirstPersonCommand { get; }
     public RelayCommand SetOrbitCommand { get; }
+    public RelayCommand AddDoorCommand { get; }
+    public RelayCommand AddClosetDoorCommand { get; }
+    public RelayCommand AddWindowCommand { get; }
+    public RelayCommand RemoveOpeningCommand { get; }
+    public RelayCommand ApplyOpeningCommand { get; }
+
+    /// <summary>Wall openings (doors, closet doors, windows) shown in the openings list.</summary>
+    public ObservableCollection<WallOpening> Openings { get; } = [];
+
+    /// <summary>Choices for the opening editor's wall and hinge combo boxes.</summary>
+    public WallSide[] WallSides { get; } = Enum.GetValues<WallSide>();
+    public HingeSide[] HingeSides { get; } = Enum.GetValues<HingeSide>();
 
     /// <summary>True when the center pane shows the 3D viewport instead of the 2D plan.</summary>
     public bool Is3D
@@ -215,6 +253,49 @@ public sealed class RoomEditorViewModel : ViewModelBase
 
     public bool HasItemError => !string.IsNullOrEmpty(_itemError);
 
+    public WallOpening? SelectedOpening
+    {
+        get => _selectedOpening;
+        set
+        {
+            if (SetField(ref _selectedOpening, value))
+            {
+                RemoveOpeningCommand.RaiseCanExecuteChanged();
+                ApplyOpeningCommand.RaiseCanExecuteChanged();
+                OnPropertyChanged(nameof(HasOpeningSelection));
+                RefreshOpeningTexts();
+            }
+        }
+    }
+
+    public bool HasOpeningSelection => _selectedOpening is not null;
+
+    /// <summary>True when the selected opening is a window (only then is the sill editable).</summary>
+    public bool OpeningIsWindow => _selectedOpening?.Kind == OpeningKind.Window;
+
+    public WallSide OpeningWall { get => _openingWall; set => SetField(ref _openingWall, value); }
+    public HingeSide OpeningHinge { get => _openingHinge; set => SetField(ref _openingHinge, value); }
+    public string OpeningOffsetText { get => _openingOffsetText; set => SetField(ref _openingOffsetText, value); }
+    public string OpeningWidthText { get => _openingWidthText; set => SetField(ref _openingWidthText, value); }
+    public string OpeningHeightText { get => _openingHeightText; set => SetField(ref _openingHeightText, value); }
+    public string OpeningSillText { get => _openingSillText; set => SetField(ref _openingSillText, value); }
+    public string FrameTopText { get => _frameTopText; set => SetField(ref _frameTopText, value); }
+    public string FrameBottomText { get => _frameBottomText; set => SetField(ref _frameBottomText, value); }
+    public string FrameLeftText { get => _frameLeftText; set => SetField(ref _frameLeftText, value); }
+    public string FrameRightText { get => _frameRightText; set => SetField(ref _frameRightText, value); }
+
+    public string? OpeningError
+    {
+        get => _openingError;
+        private set
+        {
+            if (SetField(ref _openingError, value))
+                OnPropertyChanged(nameof(HasOpeningError));
+        }
+    }
+
+    public bool HasOpeningError => !string.IsNullOrEmpty(_openingError);
+
     /// <summary>Snap granularity: 5 cm in metric, 1 inch in imperial.</summary>
     public double SnapStepMeters => _unitSystem == UnitSystem.Imperial ? Length.MetersPerInch : 0.05;
 
@@ -244,8 +325,28 @@ public sealed class RoomEditorViewModel : ViewModelBase
         var roomW = Room.Dimensions.Width.Meters;
         var roomL = Room.Dimensions.Length.Meters;
 
-        item.Position = new Vec2(Clamp(x, halfX, roomW - halfX), Clamp(y, halfY, roomL - halfY));
+        var target = new Vec2(Clamp(x, halfX, roomW - halfX), Clamp(y, halfY, roomL - halfY));
+        // Nothing may sit in a door or closet-door swing path — block the move if it would.
+        if (OverlapsAnySwing(new FootprintRect(target, item.Width.Meters, item.Depth.Meters, item.Rotation)))
+            return;
+
+        item.Position = target;
         Recompute();
+    }
+
+    /// <summary>True if the footprint overlaps any door/closet-door swing arc in the room.</summary>
+    private bool OverlapsAnySwing(FootprintRect footprint)
+    {
+        var dims = Room.Dimensions;
+        foreach (var opening in Room.Openings)
+        {
+            foreach (var arc in opening.FloorRegions(dims))
+            {
+                if (arc.Intersects(footprint))
+                    return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>Serializes the current room to <paramref name="stream"/> as a .mockroom document.</summary>
@@ -267,18 +368,24 @@ public sealed class RoomEditorViewModel : ViewModelBase
     private void ApplyLoaded(Room loaded)
     {
         SelectedItem = null;
+        SelectedOpening = null;
 
         Room.Dimensions = loaded.Dimensions;
         Room.ClearItems();
-        Room.ClearDoors();
+        Room.ClearOpenings();
         Items.Clear();
+        Openings.Clear();
         foreach (var item in loaded.Items)
         {
             Room.AddItem(item);
             Items.Add(item);
         }
-        foreach (var door in loaded.Doors)
-            Room.AddDoor(door);
+        foreach (var opening in loaded.Openings)
+        {
+            ClampOpeningToRoom(opening);
+            Room.AddOpening(opening);
+            Openings.Add(opening);
+        }
 
         SetUnitSystem(loaded.PreferredUnits);
         EyeHeightMaxMeters = Room.Dimensions.Height.Meters;
@@ -306,6 +413,7 @@ public sealed class RoomEditorViewModel : ViewModelBase
         OnPropertyChanged(nameof(SnapStepMeters));
         RefreshDimensionTexts();
         RefreshItemTexts();
+        RefreshOpeningTexts();
         RefreshAreaTexts();
     }
 
@@ -363,6 +471,11 @@ public sealed class RoomEditorViewModel : ViewModelBase
         EyeHeightMaxMeters = height.Meters;
         if (_eyeHeightMeters > EyeHeightMaxMeters)
             EyeHeightMeters = EyeHeightMaxMeters;
+        // A shorter ceiling may now clip existing openings; clamp them back under it.
+        foreach (var opening in Room.Openings)
+            ClampOpeningToRoom(opening);
+        if (SelectedOpening is not null)
+            RefreshOpeningTexts();
         Recompute();
     }
 
@@ -393,15 +506,182 @@ public sealed class RoomEditorViewModel : ViewModelBase
             return;
         }
 
+        var rotation = degrees * Math.PI / 180.0;
+        if (OverlapsAnySwing(new FootprintRect(item.Position, width.Meters, depth.Meters, rotation)))
+        {
+            ItemError = "Item would block a door swing.";
+            return;
+        }
+
         ItemError = null;
         item.Width = width;
         item.Depth = depth;
         item.Height = height;
-        item.Rotation = degrees * Math.PI / 180.0;
+        item.Rotation = rotation;
 
         // Re-clamp the resized footprint back inside the room, then recompute.
         DragItemTo(item, item.Position);
     }
+
+    private void AddOpening(OpeningKind kind)
+    {
+        var wall = OpeningWall;
+        var wallLength = WallLengthFor(wall);
+        var (width, height, sill) = kind switch
+        {
+            OpeningKind.ClosetDoor => (DefaultClosetWidthMeters, DefaultDoorHeightMeters, 0.0),
+            OpeningKind.Window => (DefaultWindowWidthMeters, DefaultWindowHeightMeters, DefaultWindowSillMeters),
+            _ => (DefaultDoorWidthMeters, DefaultDoorHeightMeters, 0.0),
+        };
+        // Windows get a default frame on each side; keep the whole opening within the wall.
+        var frame = kind == OpeningKind.Window ? DefaultWindowFrameMeters : 0.0;
+        width = Math.Min(width, Math.Max(0.1, wallLength - 2 * frame));
+
+        var opening = new WallOpening(kind, wall,
+            Length.FromMeters(wallLength / 2),
+            Length.FromMeters(width),
+            Length.FromMeters(height),
+            Length.FromMeters(sill))
+        {
+            FrameTop = Length.FromMeters(frame),
+            FrameBottom = Length.FromMeters(frame),
+            FrameLeft = Length.FromMeters(frame),
+            FrameRight = Length.FromMeters(frame),
+        };
+        ClampOpeningToRoom(opening);
+
+        Room.AddOpening(opening);
+        Openings.Add(opening);
+        SelectedOpening = opening;
+        Recompute();
+    }
+
+    private void RemoveSelectedOpening()
+    {
+        if (SelectedOpening is null)
+            return;
+        Room.RemoveOpening(SelectedOpening);
+        Openings.Remove(SelectedOpening);
+        SelectedOpening = null;
+        Recompute();
+    }
+
+    private void ApplyOpening()
+    {
+        var opening = SelectedOpening;
+        if (opening is null)
+            return;
+
+        if (!UnitConverter.TryParse(OpeningOffsetText, _unitSystem, out var offset) ||
+            !UnitConverter.TryParse(OpeningWidthText, _unitSystem, out var width) ||
+            !UnitConverter.TryParse(OpeningHeightText, _unitSystem, out var height))
+        {
+            OpeningError = "Enter valid offset, width, and height.";
+            return;
+        }
+
+        // Windows can sit above a sill and carry a frame; doors/closets start at the floor with no frame.
+        var sill = Length.Zero;
+        var frameTop = Length.Zero;
+        var frameBottom = Length.Zero;
+        var frameLeft = Length.Zero;
+        var frameRight = Length.Zero;
+        if (opening.Kind == OpeningKind.Window)
+        {
+            if (!UnitConverter.TryParse(OpeningSillText, _unitSystem, out sill))
+            {
+                OpeningError = "Enter a valid sill height.";
+                return;
+            }
+            if (!UnitConverter.TryParse(FrameTopText, _unitSystem, out frameTop) ||
+                !UnitConverter.TryParse(FrameBottomText, _unitSystem, out frameBottom) ||
+                !UnitConverter.TryParse(FrameLeftText, _unitSystem, out frameLeft) ||
+                !UnitConverter.TryParse(FrameRightText, _unitSystem, out frameRight))
+            {
+                OpeningError = "Enter valid frame widths.";
+                return;
+            }
+        }
+
+        if (width.Meters <= 0 || height.Meters <= 0 || offset.Meters < 0 || sill.Meters < 0 ||
+            frameTop.Meters < 0 || frameBottom.Meters < 0 || frameLeft.Meters < 0 || frameRight.Meters < 0)
+        {
+            OpeningError = "Sizes must be positive.";
+            return;
+        }
+
+        var outerWidth = width.Meters + frameLeft.Meters + frameRight.Meters;
+        var outerHeight = height.Meters + frameTop.Meters + frameBottom.Meters;
+
+        var wallLength = WallLengthFor(OpeningWall);
+        if (outerWidth > wallLength ||
+            offset.Meters - outerWidth / 2 < 0 ||
+            offset.Meters + outerWidth / 2 > wallLength)
+        {
+            OpeningError = "The opening does not fit within the wall.";
+            return;
+        }
+
+        if (sill.Meters + outerHeight > Room.Dimensions.Height.Meters)
+        {
+            OpeningError = "The opening's top cannot exceed the wall height.";
+            return;
+        }
+
+        OpeningError = null;
+        opening.Wall = OpeningWall;
+        opening.HingeSide = OpeningHinge;
+        opening.OffsetAlongWall = offset;
+        opening.Width = width;
+        opening.Height = height;
+        opening.SillHeight = sill;
+        opening.FrameTop = frameTop;
+        opening.FrameBottom = frameBottom;
+        opening.FrameLeft = frameLeft;
+        opening.FrameRight = frameRight;
+        Recompute();
+    }
+
+    private void RefreshOpeningTexts()
+    {
+        var opening = SelectedOpening;
+        OnPropertyChanged(nameof(OpeningIsWindow));
+        if (opening is null)
+        {
+            OpeningOffsetText = OpeningWidthText = OpeningHeightText = OpeningSillText = "";
+            FrameTopText = FrameBottomText = FrameLeftText = FrameRightText = "";
+            OpeningError = null;
+            return;
+        }
+
+        OpeningWall = opening.Wall;
+        OpeningHinge = opening.HingeSide;
+        OpeningOffsetText = FormatPlain(opening.OffsetAlongWall);
+        OpeningWidthText = FormatPlain(opening.Width);
+        OpeningHeightText = FormatPlain(opening.Height);
+        OpeningSillText = FormatPlain(opening.SillHeight);
+        FrameTopText = FormatPlain(opening.FrameTop);
+        FrameBottomText = FormatPlain(opening.FrameBottom);
+        FrameLeftText = FormatPlain(opening.FrameLeft);
+        FrameRightText = FormatPlain(opening.FrameRight);
+        OpeningError = null;
+    }
+
+    /// <summary>Shrinks an opening so its (framed) top never exceeds the current ceiling height.</summary>
+    private void ClampOpeningToRoom(WallOpening opening)
+    {
+        var ceiling = Room.Dimensions.Height.Meters;
+        if (opening.SillHeight.Meters > ceiling)
+            opening.SillHeight = Length.FromMeters(ceiling);
+        var frames = opening.FrameTop.Meters + opening.FrameBottom.Meters;
+        var maxHeight = ceiling - opening.SillHeight.Meters - frames;
+        if (opening.Height.Meters > maxHeight)
+            opening.Height = Length.FromMeters(Math.Max(0, maxHeight));
+    }
+
+    /// <summary>The interior length of a wall: room width for North/South, room length for East/West.</summary>
+    private double WallLengthFor(WallSide wall) =>
+        wall is WallSide.North or WallSide.South ? Room.Dimensions.Width.Meters : Room.Dimensions.Length.Meters;
 
     private void RefreshDimensionTexts()
     {

@@ -4,14 +4,15 @@ using MockRoom.Core.Units;
 namespace MockRoom.Core.Rooms;
 
 /// <summary>
-/// A room being designed: its dimensions, the items placed in it, the doors in
-/// its walls, and the unit system the user prefers for display. This is the root
-/// aggregate the UI binds to and the space calculator and persistence operate on.
+/// A room being designed: its dimensions, the items placed in it, the openings
+/// (doors, closet doors, windows) in its walls, and the unit system the user prefers
+/// for display. This is the root aggregate the UI binds to and the space calculator
+/// and persistence operate on.
 /// </summary>
 public sealed class Room
 {
     private readonly List<RoomItem> _items = [];
-    private readonly List<Door> _doors = [];
+    private readonly List<WallOpening> _openings = [];
 
     public Room(RoomDimensions dimensions, UnitSystem preferredUnits = UnitSystem.Metric)
     {
@@ -23,7 +24,7 @@ public sealed class Room
     public UnitSystem PreferredUnits { get; set; }
 
     public IReadOnlyList<RoomItem> Items => _items;
-    public IReadOnlyList<Door> Doors => _doors;
+    public IReadOnlyList<WallOpening> Openings => _openings;
 
     public Area FloorArea => Dimensions.FloorArea;
 
@@ -32,8 +33,8 @@ public sealed class Room
     public bool RemoveItem(Guid id) => _items.RemoveAll(i => i.Id == id) > 0;
     public void ClearItems() => _items.Clear();
 
-    public void AddDoor(Door door) => _doors.Add(door);
-    public bool RemoveDoor(Door door) => _doors.Remove(door);
-    public bool RemoveDoor(Guid id) => _doors.RemoveAll(d => d.Id == id) > 0;
-    public void ClearDoors() => _doors.Clear();
+    public void AddOpening(WallOpening opening) => _openings.Add(opening);
+    public bool RemoveOpening(WallOpening opening) => _openings.Remove(opening);
+    public bool RemoveOpening(Guid id) => _openings.RemoveAll(o => o.Id == id) > 0;
+    public void ClearOpenings() => _openings.Clear();
 }

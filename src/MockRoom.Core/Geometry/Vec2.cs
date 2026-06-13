@@ -17,6 +17,9 @@ public readonly struct Vec2(double x, double y) : IEquatable<Vec2>
 
     public double Length => Math.Sqrt(X * X + Y * Y);
 
+    /// <summary>The dot product of two vectors.</summary>
+    public static double Dot(Vec2 a, Vec2 b) => a.X * b.X + a.Y * b.Y;
+
     public bool Equals(Vec2 other) => X.Equals(other.X) && Y.Equals(other.Y);
     public override bool Equals(object? obj) => obj is Vec2 other && Equals(other);
     public override int GetHashCode() => HashCode.Combine(X, Y);

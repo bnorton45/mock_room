@@ -44,13 +44,36 @@ public class RoomMeshBuilderTests
     {
         var room = EmptyRoom();
         // A 1 m wide, 2 m tall door centered on the 5 m south wall (does not reach the 2.5 m ceiling).
-        room.AddDoor(new Door(WallSide.South, Length.FromMeters(2.5), Length.FromMeters(1), Length.FromMeters(2)));
+        room.AddOpening(new WallOpening(OpeningKind.Door, WallSide.South,
+            Length.FromMeters(2.5), Length.FromMeters(1), Length.FromMeters(2)));
 
         var mesh = RoomMeshBuilder.Build(room);
 
-        // Floor + 3 plain walls + doored wall (left panel + right panel + lintel = 3 quads).
+        // Floor + 3 plain walls + doored wall (left + right + lintel = 3 quads) + open leaf (a cuboid).
         var dooredWallVerts = 3 * 6;
-        Assert.Equal(FloorVerts + 3 * WallVerts + dooredWallVerts, mesh.VertexCount); // 42
+        Assert.Equal(FloorVerts + 3 * WallVerts + dooredWallVerts + BoxVerts, mesh.VertexCount); // 78
+    }
+
+    [Fact]
+    public void CenteredWindow_AddsApronLintelAndFrameRingToItsWall()
+    {
+        var room = EmptyRoom();
+        // A framed pane (1 m + 0.1 m frame all round → 1.2 m outer) above a 0.8 m sill,
+        // outer top 2.0 m (below the 2.5 m ceiling), centered. Windows do not swing → no leaf.
+        room.AddOpening(new WallOpening(OpeningKind.Window, WallSide.South,
+            Length.FromMeters(2.5), Length.FromMeters(1.0), Length.FromMeters(1.0), Length.FromMeters(0.8))
+        {
+            FrameTop = Length.FromMeters(0.1),
+            FrameBottom = Length.FromMeters(0.1),
+            FrameLeft = Length.FromMeters(0.1),
+            FrameRight = Length.FromMeters(0.1),
+        });
+
+        var mesh = RoomMeshBuilder.Build(room);
+
+        // Floor + 3 plain walls + windowed wall (left + right + apron + lintel + 4-quad frame ring = 8 quads).
+        var windowedWallVerts = 8 * 6;
+        Assert.Equal(FloorVerts + 3 * WallVerts + windowedWallVerts, mesh.VertexCount); // 72
     }
 
     [Fact]
