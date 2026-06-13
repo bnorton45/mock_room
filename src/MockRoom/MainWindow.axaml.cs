@@ -39,6 +39,15 @@ public partial class MainWindow : Window
             e.Pointer.Capture(null);
         };
         View3DInput.PointerWheelChanged += (_, e) => View3D.ZoomBy(e.Delta.Y);
+
+        // Give the label overlay a reference to the viewport so it can project world
+        // positions to screen, and repaint it whenever the camera moves.
+        Labels3D.Viewport = View3D;
+        View3D.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == Controls.Viewport3DControl.CameraVersionProperty)
+                Labels3D.InvalidateVisual();
+        };
     }
 
     private async void OnOpenClick(object? sender, RoutedEventArgs e)

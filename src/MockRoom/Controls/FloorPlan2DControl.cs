@@ -42,6 +42,12 @@ public sealed class FloorPlan2DControl : Control
 
     private static readonly IBrush FreeFloorBrush = new SolidColorBrush(Color.FromArgb(0x80, 0x2F, 0x6E, 0xB0));
 
+    // All brushes and pens that use fixed colours are static so they are allocated once,
+    // not on every Render call.
+    private static readonly IBrush WallBrush    = new SolidColorBrush(Color.FromRgb(0x72, 0x7A, 0x84));
+    private static readonly IBrush FloorBrush   = new SolidColorBrush(Color.FromRgb(0x2A, 0x2F, 0x36));
+    private static readonly IPen   InnerEdgePen = new Pen(new SolidColorBrush(Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF)), 1);
+
     static FloorPlan2DControl()
     {
         AffectsRender<FloorPlan2DControl>(
@@ -97,13 +103,24 @@ public sealed class FloorPlan2DControl : Control
         _offsetY = pad + (availH - roomL * _scale) / 2;
         _roomL = roomL; // cached so ToPx/ToWorld can flip Y (North at the top, globe convention)
 
-        // Floor.
-        var floor = new Rect(ToPx(new Vec2(0, 0)), ToPx(new Vec2(roomW, roomL)));
-        context.FillRectangle(new SolidColorBrush(Color.FromRgb(0x2A, 0x2F, 0x36)), floor);
+        // Build the floor rect from raw screen-space values rather than from two ToPx calls:
+        // Rect(Point,Point) in Avalonia 11 does not normalise, so passing a Y-flipped pair
+        // produces a negative height and the rect is silently skipped by every draw call.
+        var floor = new Rect(_offsetX, _offsetY, roomW * _scale, roomL * _scale);
+
+        // Walls: draw a filled outer shell so the wall mass is clearly visible.
+        // 0.15 m wall thickness in world space, minimum 6 px so thin rooms still show walls.
+        var wallPx = System.Math.Max(6.0, 0.15 * _scale);
+        var outer = floor.Inflate(wallPx);
+        context.FillRectangle(WallBrush, outer);
+
+        // Floor interior.
+        context.FillRectangle(FloorBrush, floor);
 
         DrawFreeFloor(context, roomW, roomL);
 
-        context.DrawRectangle(null, new Pen(Brushes.White, 2), floor);
+        // Thin line marking the wall-floor inner boundary.
+        context.DrawRectangle(null, InnerEdgePen, floor);
 
         DrawOpenings(context, room);
 
@@ -115,29 +132,16 @@ public sealed class FloorPlan2DControl : Control
     }
 
     /// <summary>Draws a small fixed reference compass (North up) in the top-left corner.</summary>
-    private void DrawCompass(DrawingContext context)
+    private static void DrawCompass(DrawingContext context)
     {
         const double r = 20;
         var center = new Point(34, 34);
-        var ring = new Pen(new SolidColorBrush(Color.FromArgb(0xB0, 0xC9, 0xD1, 0xD9)), 1.5);
-        context.DrawEllipse(new SolidColorBrush(Color.FromArgb(0x66, 0x20, 0x28, 0x30)), ring, center, r, r);
-
-        // North needle: a red triangle pointing up.
-        var needle = new StreamGeometry();
-        using (var ctx = needle.Open())
-        {
-            ctx.BeginFigure(new Point(center.X, center.Y - r + 3), isFilled: true);
-            ctx.LineTo(new Point(center.X - 5, center.Y + 2));
-            ctx.LineTo(new Point(center.X + 5, center.Y + 2));
-            ctx.EndFigure(isClosed: true);
-        }
-        context.DrawGeometry(new SolidColorBrush(Color.FromRgb(0xE0, 0x6C, 0x6C)), null, needle);
-
-        var labels = new SolidColorBrush(Color.FromRgb(0xC9, 0xD1, 0xD9));
-        DrawCentered(context, "N", new Point(center.X, center.Y - r - 7), 11, labels);
-        DrawCentered(context, "S", new Point(center.X, center.Y + r + 7), 10, labels);
-        DrawCentered(context, "E", new Point(center.X + r + 7, center.Y), 10, labels);
-        DrawCentered(context, "W", new Point(center.X - r - 7, center.Y), 10, labels);
+        context.DrawEllipse(CompassBgBrush, CompassRingPen, center, r, r);
+        context.DrawGeometry(CompassNeedleBrush, null, CompassNeedle);
+        DrawCentered(context, "N", new Point(center.X, center.Y - r - 7), 11, CompassLabelBrush);
+        DrawCentered(context, "S", new Point(center.X, center.Y + r + 7), 10, CompassLabelBrush);
+        DrawCentered(context, "E", new Point(center.X + r + 7, center.Y), 10, CompassLabelBrush);
+        DrawCentered(context, "W", new Point(center.X - r - 7, center.Y), 10, CompassLabelBrush);
     }
 
     private void DrawFreeFloor(DrawingContext context, double roomW, double roomL)
@@ -153,7 +157,14 @@ public sealed class FloorPlan2DControl : Control
             var x1 = System.Math.Min(colEnd * cell, roomW);
             var y0 = row * cell;
             var y1 = System.Math.Min((row + 1) * cell, roomL);
-            context.FillRectangle(FreeFloorBrush, new Rect(ToPx(new Vec2(x0, y0)), ToPx(new Vec2(x1, y1))));
+            // Use explicit Rect construction: Rect(Point,Point) in Avalonia 11 does not
+            // normalise coordinates, so the Y-flipped pair would produce negative height.
+            var cellRect = new Rect(
+                _offsetX + x0 * _scale,
+                _offsetY + (roomL - y1) * _scale,   // y1 is the world-top → screen-top
+                (x1 - x0) * _scale,
+                (y1 - y0) * _scale);
+            context.FillRectangle(FreeFloorBrush, cellRect);
         }
     }
 
@@ -171,10 +182,7 @@ public sealed class FloorPlan2DControl : Control
         }
 
         var fill = new SolidColorBrush(Color.Parse(item.ColorHex), 0.85);
-        var pen = selected
-            ? new Pen(Brushes.White, 2.5)
-            : new Pen(new SolidColorBrush(Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)), 1);
-        context.DrawGeometry(fill, pen, geometry);
+        context.DrawGeometry(fill, selected ? SelectedItemPen : UnselectedItemPen, geometry);
 
         DrawCentered(context, item.Name, ToPx(item.Position), 11, Brushes.White);
     }
@@ -182,36 +190,61 @@ public sealed class FloorPlan2DControl : Control
     private static readonly Color DoorColor = Color.FromRgb(0xE6, 0xB8, 0x4C);
     private static readonly Color WindowColor = Color.FromRgb(0x5A, 0xB0, 0xFF);
 
+    // Opening pens (declared after DoorColor/WindowColor so static init order is correct).
+    private static readonly IPen DoorPen   = new Pen(new SolidColorBrush(DoorColor), 4);
+    private static readonly IPen ArcPen    = new Pen(new SolidColorBrush(DoorColor, 0.7), 1.5);
+    private static readonly IPen LeafPen   = new Pen(new SolidColorBrush(DoorColor), 5);
+    private static readonly IPen WindowPen = new Pen(new SolidColorBrush(WindowColor), 4);
+
+    // Item pens.
+    private static readonly IPen SelectedItemPen   = new Pen(Brushes.White, 2.5);
+    private static readonly IPen UnselectedItemPen = new Pen(new SolidColorBrush(Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)), 1);
+
+    // Compass resources — the needle is a fixed shape so we build it once.
+    private static readonly IPen    CompassRingPen    = new Pen(new SolidColorBrush(Color.FromArgb(0xB0, 0xC9, 0xD1, 0xD9)), 1.5);
+    private static readonly IBrush  CompassBgBrush    = new SolidColorBrush(Color.FromArgb(0x66, 0x20, 0x28, 0x30));
+    private static readonly IBrush  CompassNeedleBrush = new SolidColorBrush(Color.FromRgb(0xE0, 0x6C, 0x6C));
+    private static readonly IBrush  CompassLabelBrush = new SolidColorBrush(Color.FromRgb(0xC9, 0xD1, 0xD9));
+    private static readonly Geometry CompassNeedle    = BuildCompassNeedle();
+
+    private static Geometry BuildCompassNeedle()
+    {
+        const double r = 20;
+        var cx = 34.0;
+        var cy = 34.0;
+        var geo = new StreamGeometry();
+        using var ctx = geo.Open();
+        ctx.BeginFigure(new Point(cx, cy - r + 3), isFilled: true);
+        ctx.LineTo(new Point(cx - 5, cy + 2));
+        ctx.LineTo(new Point(cx + 5, cy + 2));
+        ctx.EndFigure(isClosed: true);
+        return geo;
+    }
+
     private void DrawOpenings(DrawingContext context, Room room)
     {
         var dims = room.Dimensions;
-        var doorPen = new Pen(new SolidColorBrush(DoorColor), 4);
-        var arcPen = new Pen(new SolidColorBrush(DoorColor, 0.7), 1.5);
-        var leafPen = new Pen(new SolidColorBrush(DoorColor), 5);
-        var windowPen = new Pen(new SolidColorBrush(WindowColor), 4);
 
         foreach (var opening in room.Openings)
         {
             var (a, b) = OpeningEndpoints(opening, dims);
             if (opening.Kind == OpeningKind.Window)
             {
-                // A window: a band across the wall, no swing.
-                context.DrawLine(windowPen, ToPx(a), ToPx(b));
+                context.DrawLine(WindowPen, ToPx(a), ToPx(b));
                 continue;
             }
 
-            // A door or closet door: the wall gap, its swing arc(s), and the open leaf at 90°.
-            context.DrawLine(doorPen, ToPx(a), ToPx(b));
+            context.DrawLine(DoorPen, ToPx(a), ToPx(b));
             foreach (var arc in opening.FloorRegions(dims))
             {
-                DrawSwingArc(context, arcPen, arc);
-                context.DrawLine(leafPen, ToPx(arc.Hinge), ToPx(arc.Hinge + arc.DirB * arc.Radius));
+                DrawSwingArc(context, ArcPen, arc);
+                context.DrawLine(LeafPen, ToPx(arc.Hinge), ToPx(arc.Hinge + arc.DirB * arc.Radius));
             }
         }
     }
 
     /// <summary>Draws the quarter-circle a door leaf sweeps as a sampled polyline.</summary>
-    private void DrawSwingArc(DrawingContext context, Pen pen, Core.Geometry.SwingArc arc)
+    private void DrawSwingArc(DrawingContext context, IPen pen, Core.Geometry.SwingArc arc)
     {
         const int segments = 12;
         var geometry = new StreamGeometry();
