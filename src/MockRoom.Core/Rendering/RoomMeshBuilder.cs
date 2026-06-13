@@ -21,10 +21,8 @@ public static class RoomMeshBuilder
 
     private readonly record struct Mat(float R, float G, float B, float Metallic, float Roughness);
 
-    private static readonly Mat FreeFloorColor  = new(0.18f, 0.40f, 0.66f, 0f,  0.9f);
-    private static readonly Mat FallbackItem    = new(0.60f, 0.64f, 0.68f, 0f,  0.8f);
-    private static readonly Mat DoorLeafColor   = new(0.58f, 0.42f, 0.27f, 0f,  0.9f);
-    private static readonly Mat FrameColor      = new(0.90f, 0.90f, 0.92f, 0f,  0.8f);
+    private static readonly Mat FreeFloorColor = new(0.18f, 0.40f, 0.66f, 0f, 0.9f);
+    private static readonly Mat FallbackItem   = new(0.60f, 0.64f, 0.68f, 0f, 0.8f);
 
     /// <summary>Thickness of an open door leaf and a window frame ring, in meters.</summary>
     private const float LeafThickness = 0.04f;
@@ -38,16 +36,15 @@ public static class RoomMeshBuilder
     /// <summary>Lifts the free-floor overlay a hair above the floor to avoid z-fighting.</summary>
     private const float FreeFloorLift = 0.003f;
 
-    /// <summary>Blend fraction toward white for the selected item, so it reads as highlighted.</summary>
+    /// <summary>Blend fraction toward white for the selected surface, so it reads as highlighted.</summary>
     private const float SelectedHighlight = 0.55f;
 
     /// <summary>
-    /// Builds the room mesh. When <paramref name="freeFloor"/> is supplied, its free
-    /// cells are painted as a blue overlay just above the floor (the usable-space
-    /// highlight); pass <c>null</c> for a plain floor. The <paramref name="selected"/>
-    /// item, if any, is brightened so the 3D view shows which item is selected.
+    /// Builds the room mesh. When <paramref name="freeFloor"/> is supplied its free
+    /// cells are painted as a blue overlay just above the floor. <paramref name="selected"/>
+    /// identifies the currently selected paint target, which is brightened in the mesh.
     /// </summary>
-    public static MeshData Build(Room room, OccupancyGrid? freeFloor = null, RoomItem? selected = null)
+    public static MeshData Build(Room room, OccupancyGrid? freeFloor = null, PaintTarget? selected = null)
     {
         var dims = room.Dimensions;
         var w = (float)dims.Width.Meters;
@@ -55,8 +52,9 @@ public static class RoomMeshBuilder
         var h = (float)dims.Height.Meters;
 
         var surfaces = room.Surfaces;
+        var isFloorSelected = selected is FloorPaintTarget;
         var floorMat = ParseMaterial(surfaces.FloorColorHex, surfaces.FloorMetallic, surfaces.FloorRoughness);
-        var wallMat  = ParseMaterial(surfaces.WallColorHex,  surfaces.WallMetallic,  surfaces.WallRoughness);
+        if (isFloorSelected) floorMat = Brighten(floorMat);
 
         var verts = new List<float>(1024);
 
@@ -68,11 +66,14 @@ public static class RoomMeshBuilder
         if (freeFloor is not null)
             AddFreeFloor(verts, freeFloor, w, l);
 
-        AddWalls(verts, room, w, l, h, wallMat);
-        AddDoorLeaves(verts, room);
+        AddWalls(verts, room, w, l, h, surfaces, selected);
+        AddDoorLeaves(verts, room, selected);
 
         foreach (var item in room.Items)
-            AddItem(verts, item, ReferenceEquals(item, selected));
+        {
+            var isItemSelected = selected is ItemPaintTarget { Item: var si } && ReferenceEquals(item, si);
+            AddItem(verts, item, isItemSelected);
+        }
 
         return new MeshData(verts.ToArray(), verts.Count / FloatsPerVertex);
     }
@@ -94,19 +95,29 @@ public static class RoomMeshBuilder
         }
     }
 
-    private static void AddWalls(List<float> verts, Room room, float w, float l, float h, Mat wallMat)
+    private static void AddWalls(List<float> verts, Room room, float w, float l, float h,
+        RoomSurfaces surfaces, PaintTarget? selected)
     {
+        var selectedSide = (selected as WallPaintTarget)?.Side;
+        var selectedOpeningId = (selected as OpeningPaintTarget)?.Opening.Id;
+
         // Each wall is parameterized by distance `a` along the wall and height `y`,
         // mapped into world space. Openings on the wall become voids along `a`, each
         // with a sill below (windows) and a lintel above.
-        AddWall(verts, (a, y) => new Vector3(a, y, 0), w, h, new Vector3(0, 0, 1), wallMat,
-            OpeningsOn(room, WallSide.South, w, h));
-        AddWall(verts, (a, y) => new Vector3(a, y, l), w, h, new Vector3(0, 0, -1), wallMat,
-            OpeningsOn(room, WallSide.North, w, h));
-        AddWall(verts, (a, y) => new Vector3(0, y, a), l, h, new Vector3(1, 0, 0), wallMat,
-            OpeningsOn(room, WallSide.West, l, h));
-        AddWall(verts, (a, y) => new Vector3(w, y, a), l, h, new Vector3(-1, 0, 0), wallMat,
-            OpeningsOn(room, WallSide.East, l, h));
+        AddWall(verts, (a, y) => new Vector3(a, y, 0), w, h, new Vector3(0, 0, 1),
+            ParseMat(surfaces, WallSide.South, selectedSide), room, WallSide.South, selectedOpeningId);
+        AddWall(verts, (a, y) => new Vector3(a, y, l), w, h, new Vector3(0, 0, -1),
+            ParseMat(surfaces, WallSide.North, selectedSide), room, WallSide.North, selectedOpeningId);
+        AddWall(verts, (a, y) => new Vector3(0, y, a), l, h, new Vector3(1, 0, 0),
+            ParseMat(surfaces, WallSide.West, selectedSide), room, WallSide.West, selectedOpeningId);
+        AddWall(verts, (a, y) => new Vector3(w, y, a), l, h, new Vector3(-1, 0, 0),
+            ParseMat(surfaces, WallSide.East, selectedSide), room, WallSide.East, selectedOpeningId);
+    }
+
+    private static Mat ParseMat(RoomSurfaces surfaces, WallSide side, WallSide? selectedSide)
+    {
+        var mat = ParseMaterial(surfaces.WallColorFor(side), surfaces.WallMetallic, surfaces.WallRoughness);
+        return selectedSide == side ? Brighten(mat) : mat;
     }
 
     /// <summary>
@@ -117,9 +128,12 @@ public static class RoomMeshBuilder
     /// </summary>
     private readonly record struct WallCut(
         float Start, float End, float Sill, float Top,
-        float PaneStart, float PaneEnd, float PaneSill, float PaneTop, bool HasFrame, bool HasGlazing);
+        float PaneStart, float PaneEnd, float PaneSill, float PaneTop,
+        bool HasFrame, bool HasGlazing,
+        Mat OpeningMat, Guid OpeningId);
 
-    private static List<WallCut> OpeningsOn(Room room, WallSide side, float wallLength, float wallHeight)
+    private static List<WallCut> OpeningsOn(Room room, WallSide side, float wallLength, float wallHeight,
+        Guid? selectedOpeningId)
     {
         var cuts = new List<WallCut>();
         foreach (var opening in room.Openings)
@@ -135,7 +149,6 @@ public static class RoomMeshBuilder
             if (end <= start || top <= sill)
                 continue;
 
-            // Pane = outer hole shrunk by the frame widths, clamped within the hole.
             var paneStart = Math.Clamp(start + (float)opening.FrameLeft.Meters, start, end);
             var paneEnd = Math.Clamp(end - (float)opening.FrameRight.Meters, paneStart, end);
             var paneSill = Math.Clamp(sill + (float)opening.FrameBottom.Meters, sill, top);
@@ -143,7 +156,11 @@ public static class RoomMeshBuilder
             var hasFrame = paneStart > start || paneEnd < end || paneSill > sill || paneTop < top;
             var hasGlazing = opening.Kind == OpeningKind.Window;
 
-            cuts.Add(new WallCut(start, end, sill, top, paneStart, paneEnd, paneSill, paneTop, hasFrame, hasGlazing));
+            var baseMat = ParseMaterial(opening.ColorHex, 0f, 0.85f);
+            var openingMat = selectedOpeningId == opening.Id ? Brighten(baseMat) : baseMat;
+
+            cuts.Add(new WallCut(start, end, sill, top, paneStart, paneEnd, paneSill, paneTop,
+                hasFrame, hasGlazing, openingMat, opening.Id));
         }
 
         cuts.Sort((x, y) => x.Start.CompareTo(y.Start));
@@ -156,66 +173,64 @@ public static class RoomMeshBuilder
     /// (void) pane. <paramref name="map"/> turns (alongWall, height) into world space.
     /// </summary>
     private static void AddWall(List<float> verts, Func<float, float, Vector3> map, float wallLength, float wallHeight,
-        Vector3 normal, Mat color, List<WallCut> openings)
+        Vector3 normal, Mat wallMat, Room room, WallSide side, Guid? selectedOpeningId)
     {
+        var openings = OpeningsOn(room, side, wallLength, wallHeight, selectedOpeningId);
         var cursor = 0f;
         foreach (var cut in openings)
         {
             if (cut.Start > cursor)
-                AddPanel(verts, map, cursor, cut.Start, 0, wallHeight, normal, color);
+                AddPanel(verts, map, cursor, cut.Start, 0, wallHeight, normal, wallMat);
             if (cut.Sill > 0)
-                AddPanel(verts, map, cut.Start, cut.End, 0, cut.Sill, normal, color); // apron below a window
+                AddPanel(verts, map, cut.Start, cut.End, 0, cut.Sill, normal, wallMat);
             if (cut.Top < wallHeight)
-                AddPanel(verts, map, cut.Start, cut.End, cut.Top, wallHeight, normal, color); // lintel above
+                AddPanel(verts, map, cut.Start, cut.End, cut.Top, wallHeight, normal, wallMat);
 
             if (cut.HasFrame)
             {
-                // Frame ring around the void pane: left, right, bottom, top.
-                AddPanel(verts, map, cut.Start, cut.PaneStart, cut.Sill, cut.Top, normal, FrameColor);
-                AddPanel(verts, map, cut.PaneEnd, cut.End, cut.Sill, cut.Top, normal, FrameColor);
-                AddPanel(verts, map, cut.PaneStart, cut.PaneEnd, cut.Sill, cut.PaneSill, normal, FrameColor);
-                AddPanel(verts, map, cut.PaneStart, cut.PaneEnd, cut.PaneTop, cut.Top, normal, FrameColor);
+                AddPanel(verts, map, cut.Start, cut.PaneStart, cut.Sill, cut.Top, normal, cut.OpeningMat);
+                AddPanel(verts, map, cut.PaneEnd, cut.End, cut.Sill, cut.Top, normal, cut.OpeningMat);
+                AddPanel(verts, map, cut.PaneStart, cut.PaneEnd, cut.Sill, cut.PaneSill, normal, cut.OpeningMat);
+                AddPanel(verts, map, cut.PaneStart, cut.PaneEnd, cut.PaneTop, cut.Top, normal, cut.OpeningMat);
             }
 
             if (cut.HasGlazing)
-                AddGlazingBars(verts, map, normal, cut.PaneStart, cut.PaneEnd, cut.PaneSill, cut.PaneTop);
+                AddGlazingBars(verts, map, normal, cut.PaneStart, cut.PaneEnd, cut.PaneSill, cut.PaneTop, cut.OpeningMat);
 
             cursor = cut.End;
         }
 
         if (cursor < wallLength)
-            AddPanel(verts, map, cursor, wallLength, 0, wallHeight, normal, color);
+            AddPanel(verts, map, cursor, wallLength, 0, wallHeight, normal, wallMat);
     }
 
     /// <summary>Adds a thin open-leaf cuboid for each door/closet swing arc, at 90°.</summary>
-    private static void AddDoorLeaves(List<float> verts, Room room)
+    private static void AddDoorLeaves(List<float> verts, Room room, PaintTarget? selected)
     {
+        var selectedOpeningId = (selected as OpeningPaintTarget)?.Opening.Id;
         var dims = room.Dimensions;
         foreach (var opening in room.Openings)
         {
             if (!opening.Swings)
                 continue;
+            var baseMat = ParseMaterial(opening.ColorHex, 0f, 0.9f);
+            var leafMat = selectedOpeningId == opening.Id ? Brighten(baseMat) : baseMat;
             var leafHeight = (float)opening.Height.Meters;
             foreach (var arc in opening.FloorRegions(dims))
             {
-                // The fully-open leaf lies along DirB (into the room), length = the leaf radius.
                 var center = arc.Hinge + arc.DirB * (arc.Radius / 2);
                 var yaw = Math.Atan2(arc.DirB.Y, arc.DirB.X);
                 var footprint = new FootprintRect(center, arc.Radius, LeafThickness, yaw);
-                AddCuboid(verts, footprint, leafHeight, DoorLeafColor);
+                AddCuboid(verts, footprint, leafHeight, leafMat);
             }
         }
     }
 
     /// <summary>
-    /// Draws the internal glazing bar grid for a window pane: one horizontal bar at
-    /// mid-height (separating top and bottom halves), one horizontal bar centred in
-    /// each half (giving 4 panes per half), and one vertical bar along the centre
-    /// axis — split into 4 segments at the horizontal bar intersections to avoid
-    /// z-fighting between coplanar quads.
+    /// Draws the internal glazing bar grid for a window pane.
     /// </summary>
     private static void AddGlazingBars(List<float> verts, Func<float, float, Vector3> map, Vector3 normal,
-        float paneStart, float paneEnd, float paneSill, float paneTop)
+        float paneStart, float paneEnd, float paneSill, float paneTop, Mat frameMat)
     {
         var halfT    = GlazingBarThickness / 2f;
         var halfMidT = GlazingMidRailThickness / 2f;
@@ -224,16 +239,14 @@ public static class RoomMeshBuilder
         var quarterY = (paneSill + midY) * 0.5f;
         var threeQuarterY = (midY + paneTop) * 0.5f;
 
-        // Three full-width horizontal bars: thick mid-rail between the halves, thin bars within each half.
-        AddPanel(verts, map, paneStart, paneEnd, midY - halfMidT,       midY + halfMidT,       normal, FrameColor);
-        AddPanel(verts, map, paneStart, paneEnd, quarterY - halfT,      quarterY + halfT,      normal, FrameColor);
-        AddPanel(verts, map, paneStart, paneEnd, threeQuarterY - halfT, threeQuarterY + halfT, normal, FrameColor);
+        AddPanel(verts, map, paneStart, paneEnd, midY - halfMidT,       midY + halfMidT,       normal, frameMat);
+        AddPanel(verts, map, paneStart, paneEnd, quarterY - halfT,      quarterY + halfT,      normal, frameMat);
+        AddPanel(verts, map, paneStart, paneEnd, threeQuarterY - halfT, threeQuarterY + halfT, normal, frameMat);
 
-        // Vertical centre bar in four gap-filling segments (avoids z-fighting at crossings).
-        AddPanel(verts, map, midX - halfT, midX + halfT, paneSill,              quarterY - halfT,      normal, FrameColor);
-        AddPanel(verts, map, midX - halfT, midX + halfT, quarterY + halfT,      midY - halfMidT,       normal, FrameColor);
-        AddPanel(verts, map, midX - halfT, midX + halfT, midY + halfMidT,       threeQuarterY - halfT, normal, FrameColor);
-        AddPanel(verts, map, midX - halfT, midX + halfT, threeQuarterY + halfT, paneTop,               normal, FrameColor);
+        AddPanel(verts, map, midX - halfT, midX + halfT, paneSill,              quarterY - halfT,      normal, frameMat);
+        AddPanel(verts, map, midX - halfT, midX + halfT, quarterY + halfT,      midY - halfMidT,       normal, frameMat);
+        AddPanel(verts, map, midX - halfT, midX + halfT, midY + halfMidT,       threeQuarterY - halfT, normal, frameMat);
+        AddPanel(verts, map, midX - halfT, midX + halfT, threeQuarterY + halfT, paneTop,               normal, frameMat);
     }
 
     private static void AddPanel(List<float> verts, Func<float, float, Vector3> map,
@@ -243,16 +256,7 @@ public static class RoomMeshBuilder
     private static void AddItem(List<float> verts, RoomItem item, bool selected)
     {
         var color = ParseMaterial(item.ColorHex, item.Metallic, item.Roughness);
-        if (selected)
-        {
-            // Brighten color toward white to highlight the selected item.
-            color = new Mat(
-                Lerp(color.R, 1f, SelectedHighlight),
-                Lerp(color.G, 1f, SelectedHighlight),
-                Lerp(color.B, 1f, SelectedHighlight),
-                color.Metallic,
-                color.Roughness);
-        }
+        if (selected) color = Brighten(color);
         AddCuboid(verts, item.Footprint, (float)item.Height.Meters, color);
     }
 
@@ -264,11 +268,9 @@ public static class RoomMeshBuilder
         Vector3 Floor(Vec2 p) => new((float)p.X, 0, (float)p.Y);
         Vector3 Top(Vec2 p) => new((float)p.X, h, (float)p.Y);
 
-        // Top and bottom caps.
         AddQuad(verts, Top(p0), Top(p1), Top(p2), Top(p3), new Vector3(0, 1, 0), color);
         AddQuad(verts, Floor(p0), Floor(p3), Floor(p2), Floor(p1), new Vector3(0, -1, 0), color);
 
-        // Four sides. Lighting is two-sided, so exact normal orientation is not critical.
         AddSide(verts, p0, p1, h, color);
         AddSide(verts, p1, p2, h, color);
         AddSide(verts, p2, p3, h, color);
@@ -299,18 +301,17 @@ public static class RoomMeshBuilder
 
     private static void AddVertex(List<float> verts, Vector3 p, Vector3 normal, Mat m)
     {
-        verts.Add(p.X);
-        verts.Add(p.Y);
-        verts.Add(p.Z);
-        verts.Add(normal.X);
-        verts.Add(normal.Y);
-        verts.Add(normal.Z);
-        verts.Add(m.R);
-        verts.Add(m.G);
-        verts.Add(m.B);
-        verts.Add(m.Metallic);
-        verts.Add(m.Roughness);
+        verts.Add(p.X); verts.Add(p.Y); verts.Add(p.Z);
+        verts.Add(normal.X); verts.Add(normal.Y); verts.Add(normal.Z);
+        verts.Add(m.R); verts.Add(m.G); verts.Add(m.B);
+        verts.Add(m.Metallic); verts.Add(m.Roughness);
     }
+
+    private static Mat Brighten(Mat color) => new(
+        Lerp(color.R, 1f, SelectedHighlight),
+        Lerp(color.G, 1f, SelectedHighlight),
+        Lerp(color.B, 1f, SelectedHighlight),
+        color.Metallic, color.Roughness);
 
     private static float Lerp(float a, float b, float t) => a + (b - a) * t;
 

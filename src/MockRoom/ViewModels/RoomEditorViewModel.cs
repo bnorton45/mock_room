@@ -46,7 +46,6 @@ public sealed class RoomEditorViewModel : ViewModelBase
     private string _freeAreaText = "";
     private double _freeFraction = 1.0;
     private string? _dimensionError;
-    private RoomItem? _selectedItem;
     private int _renderVersion;
     private int _placementCounter;
     private bool _snapEnabled = true;
@@ -67,13 +66,10 @@ public sealed class RoomEditorViewModel : ViewModelBase
     private string _frameLeftText = "";
     private string _frameRightText = "";
     private string? _openingError;
-    // Room surface material backing fields — kept in sync with Room.Surfaces.
-    private Color _floorColor  = Color.Parse("#292F38");
-    private double _floorMetallic  = 0.0;
-    private double _floorRoughness = 0.9;
-    private Color _wallColor   = Color.Parse("#C7CCCE");
-    private double _wallMetallic   = 0.0;
-    private double _wallRoughness  = 0.85;
+
+    private PaintTarget? _selectedTarget;
+    private bool _syncingSelection;
+    private bool _colorPickerOpen;
 
     private bool _is3D;
     private Core.Rendering.CameraMode _cameraMode = Core.Rendering.CameraMode.FirstPerson;
@@ -109,6 +105,7 @@ public sealed class RoomEditorViewModel : ViewModelBase
         SetImperialCommand = new RelayCommand(_ => SetUnitSystem(UnitSystem.Imperial));
         ApplyDimensionsCommand = new RelayCommand(_ => ApplyDimensions());
         ApplyItemCommand = new RelayCommand(_ => ApplyItem(), _ => SelectedItem is not null);
+        ToggleColorPickerCommand = new RelayCommand(_ => IsColorPickerOpen = !_colorPickerOpen);
         SetFirstPersonCommand = new RelayCommand(_ => CameraMode = Core.Rendering.CameraMode.FirstPerson);
         SetOrbitCommand = new RelayCommand(_ => CameraMode = Core.Rendering.CameraMode.Orbit);
         AddDoorCommand = new RelayCommand(_ => AddOpening(OpeningKind.Door));
@@ -250,47 +247,118 @@ public sealed class RoomEditorViewModel : ViewModelBase
 
     public bool HasDimensionError => !string.IsNullOrEmpty(_dimensionError);
 
-    public RoomItem? SelectedItem
+    /// <summary>
+    /// The currently selected paint target (item, wall, floor, or opening). TwoWay-bound
+    /// to both the 2D and 3D view controls; drives the paint panel in the sidebar.
+    /// </summary>
+    public PaintTarget? SelectedTarget
     {
-        get => _selectedItem;
+        get => _selectedTarget;
         set
         {
-            if (SetField(ref _selectedItem, value))
+            if (!SetField(ref _selectedTarget, value))
+                return;
+
+            // Mirror into SelectedOpening when an opening is selected so the editor populates.
+            if (!_syncingSelection)
             {
-                RemoveSelectedCommand.RaiseCanExecuteChanged();
-                ApplyItemCommand.RaiseCanExecuteChanged();
-                OnPropertyChanged(nameof(HasSelection));
-                RefreshItemTexts();
+                _syncingSelection = true;
+                if (value is OpeningPaintTarget op)
+                    SelectedOpening = op.Opening;
+                _syncingSelection = false;
             }
+
+            RemoveSelectedCommand.RaiseCanExecuteChanged();
+            ApplyItemCommand.RaiseCanExecuteChanged();
+            OnPropertyChanged(nameof(HasSelection));
+            OnPropertyChanged(nameof(HasPaintTarget));
+            OnPropertyChanged(nameof(HasItemSelection));
+            OnPropertyChanged(nameof(SelectedTargetLabel));
+            OnPropertyChanged(nameof(SelectedColor));
+            RefreshItemTexts();
         }
     }
 
-    public bool HasSelection => _selectedItem is not null;
+    /// <summary>The selected item when the selection is an item; null otherwise.</summary>
+    public RoomItem? SelectedItem => (_selectedTarget as ItemPaintTarget)?.Item;
 
-    // ── Selected-item color and material ──────────────────────────────────────
+    public bool HasSelection => SelectedItem is not null;
 
-    /// <summary>Display color of the selected item as an Avalonia Color (for the color picker).</summary>
-    public Color ItemColor
+    /// <summary>True when any paint target is selected (item, wall, floor, or opening).</summary>
+    public bool HasPaintTarget => _selectedTarget is not null;
+
+    /// <summary>True when the selection is specifically an item (enables resize controls).</summary>
+    public bool HasItemSelection => _selectedTarget is ItemPaintTarget;
+
+    /// <summary>Human-readable label for what is selected, shown above the color picker.</summary>
+    public string SelectedTargetLabel => _selectedTarget switch
     {
-        get => ParseHex(_selectedItem?.ColorHex ?? "#9AA0A6");
+        FloorPaintTarget                 => "Floor",
+        WallPaintTarget wt               => $"{wt.Side} Wall",
+        OpeningPaintTarget op            => $"{op.Opening.Kind} ({op.Opening.Wall} wall)",
+        ItemPaintTarget { Item: var it } => it.Name,
+        _                                => "Nothing selected",
+    };
+
+    // ── Unified paint color ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// The colour of the currently selected paint target. Setting this updates the
+    /// target's hex string and redraws the scene.
+    /// </summary>
+    public Color SelectedColor
+    {
+        get => _selectedTarget switch
+        {
+            FloorPaintTarget                 => ParseHex(Room.Surfaces.FloorColorHex),
+            WallPaintTarget wt               => ParseHex(Room.Surfaces.WallColorFor(wt.Side)),
+            OpeningPaintTarget op            => ParseHex(op.Opening.ColorHex),
+            ItemPaintTarget { Item: var it } => ParseHex(it.ColorHex),
+            _                                => ParseHex("#9AA0A6"),
+        };
         set
         {
-            if (_selectedItem is not null)
+            var hex = ColorToHex(value);
+            switch (_selectedTarget)
             {
-                _selectedItem.ColorHex = $"#{value.R:X2}{value.G:X2}{value.B:X2}";
-                Recompute();
+                case FloorPaintTarget:
+                    Room.Surfaces = Room.Surfaces with { FloorColorHex = hex };
+                    break;
+                case WallPaintTarget wt:
+                    Room.Surfaces = Room.Surfaces.WithWallColor(wt.Side, hex);
+                    break;
+                case OpeningPaintTarget op:
+                    op.Opening.ColorHex = hex;
+                    break;
+                case ItemPaintTarget { Item: var it }:
+                    it.ColorHex = hex;
+                    break;
+                default:
+                    return;
             }
+            Recompute();
         }
     }
+
+    /// <summary>Whether the color wheel panel is visible in the sidebar.</summary>
+    public bool IsColorPickerOpen
+    {
+        get => _colorPickerOpen;
+        private set => SetField(ref _colorPickerOpen, value);
+    }
+
+    public RelayCommand ToggleColorPickerCommand { get; }
+
+    // ── Item material (metallic / roughness) — still per-item only ────────────
 
     public double ItemMetallic
     {
-        get => _selectedItem?.Metallic ?? 0.0;
+        get => SelectedItem?.Metallic ?? 0.0;
         set
         {
-            if (_selectedItem is not null)
+            if (SelectedItem is { } item)
             {
-                _selectedItem.Metallic = (float)Math.Clamp(value, 0.0, 1.0);
+                item.Metallic = (float)Math.Clamp(value, 0.0, 1.0);
                 Recompute();
             }
         }
@@ -298,92 +366,12 @@ public sealed class RoomEditorViewModel : ViewModelBase
 
     public double ItemRoughness
     {
-        get => _selectedItem?.Roughness ?? 0.8;
+        get => SelectedItem?.Roughness ?? 0.8;
         set
         {
-            if (_selectedItem is not null)
+            if (SelectedItem is { } item)
             {
-                _selectedItem.Roughness = (float)Math.Clamp(value, 0.0, 1.0);
-                Recompute();
-            }
-        }
-    }
-
-    // ── Room surface materials ────────────────────────────────────────────────
-
-    public Color FloorColor
-    {
-        get => _floorColor;
-        set
-        {
-            if (SetField(ref _floorColor, value))
-            {
-                Room.Surfaces = Room.Surfaces with { FloorColorHex = ColorToHex(value) };
-                Recompute();
-            }
-        }
-    }
-
-    public double FloorMetallic
-    {
-        get => _floorMetallic;
-        set
-        {
-            if (SetField(ref _floorMetallic, value))
-            {
-                Room.Surfaces = Room.Surfaces with { FloorMetallic = (float)value };
-                Recompute();
-            }
-        }
-    }
-
-    public double FloorRoughness
-    {
-        get => _floorRoughness;
-        set
-        {
-            if (SetField(ref _floorRoughness, value))
-            {
-                Room.Surfaces = Room.Surfaces with { FloorRoughness = (float)value };
-                Recompute();
-            }
-        }
-    }
-
-    public Color WallColor
-    {
-        get => _wallColor;
-        set
-        {
-            if (SetField(ref _wallColor, value))
-            {
-                Room.Surfaces = Room.Surfaces with { WallColorHex = ColorToHex(value) };
-                Recompute();
-            }
-        }
-    }
-
-    public double WallMetallic
-    {
-        get => _wallMetallic;
-        set
-        {
-            if (SetField(ref _wallMetallic, value))
-            {
-                Room.Surfaces = Room.Surfaces with { WallMetallic = (float)value };
-                Recompute();
-            }
-        }
-    }
-
-    public double WallRoughness
-    {
-        get => _wallRoughness;
-        set
-        {
-            if (SetField(ref _wallRoughness, value))
-            {
-                Room.Surfaces = Room.Surfaces with { WallRoughness = (float)value };
+                item.Roughness = (float)Math.Clamp(value, 0.0, 1.0);
                 Recompute();
             }
         }
@@ -420,12 +408,18 @@ public sealed class RoomEditorViewModel : ViewModelBase
         get => _selectedOpening;
         set
         {
-            if (SetField(ref _selectedOpening, value))
+            if (!SetField(ref _selectedOpening, value))
+                return;
+            RemoveOpeningCommand.RaiseCanExecuteChanged();
+            ApplyOpeningCommand.RaiseCanExecuteChanged();
+            OnPropertyChanged(nameof(HasOpeningSelection));
+            RefreshOpeningTexts();
+            // Mirror into SelectedTarget so the paint panel shows the opening's colour.
+            if (!_syncingSelection)
             {
-                RemoveOpeningCommand.RaiseCanExecuteChanged();
-                ApplyOpeningCommand.RaiseCanExecuteChanged();
-                OnPropertyChanged(nameof(HasOpeningSelection));
-                RefreshOpeningTexts();
+                _syncingSelection = true;
+                SelectedTarget = value is null ? null : new OpeningPaintTarget(value);
+                _syncingSelection = false;
             }
         }
     }
@@ -535,7 +529,7 @@ public sealed class RoomEditorViewModel : ViewModelBase
     /// <summary>Replaces the edited room's contents with a loaded room, keeping the bound instance.</summary>
     private void ApplyLoaded(Room loaded)
     {
-        SelectedItem = null;
+        SelectedTarget = null;
         SelectedOpening = null;
 
         Room.Dimensions = loaded.Dimensions;
@@ -605,7 +599,7 @@ public sealed class RoomEditorViewModel : ViewModelBase
 
         Room.AddItem(item);
         Items.Add(item);
-        SelectedItem = item;
+        SelectedTarget = new ItemPaintTarget(item);
         NewItemName = "";
         Recompute();
     }
@@ -616,7 +610,7 @@ public sealed class RoomEditorViewModel : ViewModelBase
             return;
         Room.RemoveItem(SelectedItem);
         Items.Remove(SelectedItem);
-        SelectedItem = null;
+        SelectedTarget = null;
         Recompute();
     }
 
@@ -976,10 +970,10 @@ public sealed class RoomEditorViewModel : ViewModelBase
             ItemError = null;
         }
 
-        // Always notify the color picker and sliders so they reflect the new selection.
-        OnPropertyChanged(nameof(ItemColor));
+        // Notify sliders and the unified color panel.
         OnPropertyChanged(nameof(ItemMetallic));
         OnPropertyChanged(nameof(ItemRoughness));
+        OnPropertyChanged(nameof(SelectedColor));
     }
 
     // Editable fields show a bare value matching the active unit (no unit suffix in the box).
@@ -996,16 +990,13 @@ public sealed class RoomEditorViewModel : ViewModelBase
 
     private static string ColorToHex(Color c) => $"#{c.R:X2}{c.G:X2}{c.B:X2}";
 
-    /// <summary>Pulls the current Room.Surfaces values into the backing fields (and notifies).</summary>
+    /// <summary>
+    /// After loading, the selected target may have been cleared.  If it was pointing at a
+    /// surface, notify the colour property so the panel refreshes.
+    /// </summary>
     private void SyncSurfaceFields()
     {
-        var s = Room.Surfaces;
-        SetField(ref _floorColor,     ParseHex(s.FloorColorHex), nameof(FloorColor));
-        SetField(ref _floorMetallic,  (double)s.FloorMetallic,   nameof(FloorMetallic));
-        SetField(ref _floorRoughness, (double)s.FloorRoughness,  nameof(FloorRoughness));
-        SetField(ref _wallColor,      ParseHex(s.WallColorHex),  nameof(WallColor));
-        SetField(ref _wallMetallic,   (double)s.WallMetallic,    nameof(WallMetallic));
-        SetField(ref _wallRoughness,  (double)s.WallRoughness,   nameof(WallRoughness));
+        OnPropertyChanged(nameof(SelectedColor));
     }
 
     private void RebuildViewpoints()

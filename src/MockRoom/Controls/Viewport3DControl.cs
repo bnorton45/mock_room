@@ -4,7 +4,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.OpenGL;
 using Avalonia.OpenGL.Controls;
-using MockRoom.Core.Items;
 using MockRoom.Core.Rendering;
 using MockRoom.Core.Rooms;
 using MockRoom.Core.Spatial;
@@ -50,9 +49,9 @@ public sealed class Viewport3DControl : OpenGlControlBase
     public static readonly StyledProperty<SpaceReport?> SpaceReportProperty =
         AvaloniaProperty.Register<Viewport3DControl, SpaceReport?>(nameof(SpaceReport));
 
-    public static readonly StyledProperty<RoomItem?> SelectedItemProperty =
-        AvaloniaProperty.Register<Viewport3DControl, RoomItem?>(
-            nameof(SelectedItem), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
+    public static readonly StyledProperty<PaintTarget?> SelectedTargetProperty =
+        AvaloniaProperty.Register<Viewport3DControl, PaintTarget?>(
+            nameof(SelectedTarget), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
 
     /// <summary>
     /// Incremented whenever the camera changes (drag, zoom, eye height, mode switch).
@@ -87,9 +86,8 @@ public sealed class Viewport3DControl : OpenGlControlBase
     private uint _program;
     private uint _vao;
     private uint _vbo;
-    private int _mvpLocation    = -1;
-    private int _lightLocation  = -1;
-    private int _viewPosLocation = -1;
+    private int _mvpLocation   = -1;
+    private int _lightLocation = -1;
 
     private Camera? _camera;
     private int _vertexCount;
@@ -132,11 +130,14 @@ public sealed class Viewport3DControl : OpenGlControlBase
         set => SetValue(SpaceReportProperty, value);
     }
 
-    /// <summary>The selected item; highlighted in the mesh and set by ray-picking on click.</summary>
-    public RoomItem? SelectedItem
+    /// <summary>
+    /// The currently selected paint target (item, wall, floor, or opening); highlighted
+    /// in the mesh and set by ray-picking on click.
+    /// </summary>
+    public PaintTarget? SelectedTarget
     {
-        get => GetValue(SelectedItemProperty);
-        set => SetValue(SelectedItemProperty, value);
+        get => GetValue(SelectedTargetProperty);
+        set => SetValue(SelectedTargetProperty, value);
     }
 
     public int CameraVersion
@@ -174,13 +175,13 @@ public sealed class Viewport3DControl : OpenGlControlBase
         base.OnPropertyChanged(change);
 
         if (change.Property == RoomProperty || change.Property == RenderVersionProperty ||
-            change.Property == SpaceReportProperty || change.Property == SelectedItemProperty)
+            change.Property == SpaceReportProperty || change.Property == SelectedTargetProperty)
         {
             _meshDirty = true;
         }
 
         if (change.Property == RoomProperty || change.Property == RenderVersionProperty ||
-            change.Property == SpaceReportProperty || change.Property == SelectedItemProperty ||
+            change.Property == SpaceReportProperty || change.Property == SelectedTargetProperty ||
             change.Property == CameraModeProperty || change.Property == EyeHeightProperty ||
             change.Property == ViewpointVersionProperty)
         {
@@ -211,7 +212,6 @@ public sealed class Viewport3DControl : OpenGlControlBase
         _program = BuildProgram(_gl);
         _mvpLocation     = _gl.GetUniformLocation(_program, "uMvp");
         _lightLocation   = _gl.GetUniformLocation(_program, "uLightDir");
-        _viewPosLocation = _gl.GetUniformLocation(_program, "uViewPos");
 
         _vao = _gl.GenVertexArray();
         _gl.BindVertexArray(_vao);
@@ -266,8 +266,6 @@ public sealed class Viewport3DControl : OpenGlControlBase
         var span = MemoryMarshal.CreateReadOnlySpan(ref Unsafe.As<System.Numerics.Matrix4x4, float>(ref mvp), 16);
         glApi.UniformMatrix4(_mvpLocation, 1, false, span);
         glApi.Uniform3(_lightLocation, 0.4f, 1.0f, 0.7f);
-        var eye = _camera!.EyePosition;
-        glApi.Uniform3(_viewPosLocation, eye.X, eye.Y, eye.Z);
 
         glApi.BindVertexArray(_vao);
         glApi.DrawArrays(PrimitiveType.Triangles, 0, (uint)_vertexCount);
@@ -313,7 +311,7 @@ public sealed class Viewport3DControl : OpenGlControlBase
         if (!_meshDirty && _uploadedVersion == RenderVersion)
             return;
 
-        var mesh = RoomMeshBuilder.Build(room, SpaceReport?.Grid, SelectedItem);
+        var mesh = RoomMeshBuilder.Build(room, SpaceReport?.Grid, SelectedTarget);
         _vertexCount = mesh.VertexCount;
 
         glApi.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
@@ -375,7 +373,7 @@ public sealed class Viewport3DControl : OpenGlControlBase
             PickAt(_pressOrigin);
     }
 
-    /// <summary>Casts a ray through the clicked point and selects the front-most item (or clears).</summary>
+    /// <summary>Casts a ray through the clicked point and selects the hit surface or item (or clears).</summary>
     private void PickAt(Point position)
     {
         var room = Room;
@@ -383,7 +381,7 @@ public sealed class Viewport3DControl : OpenGlControlBase
             return;
 
         var ray = _camera.ScreenPointToRay(position.X, position.Y, Bounds.Width, Bounds.Height);
-        SelectedItem = RayPicker.Pick(room.Items, ray);
+        SelectedTarget = RayPicker.PickTarget(room, ray);
     }
 
     private static double Distance(Point a, Point b)
@@ -435,7 +433,11 @@ public sealed class Viewport3DControl : OpenGlControlBase
         glApi.LinkProgram(program);
         glApi.GetProgram(program, ProgramPropertyARB.LinkStatus, out var linked);
         if (linked == 0)
-            throw new InvalidOperationException($"Shader link failed: {glApi.GetProgramInfoLog(program)}");
+        {
+            var log = glApi.GetProgramInfoLog(program);
+            Console.Error.WriteLine($"[Viewport3D] Shader link failed: {log}");
+            throw new InvalidOperationException($"Shader link failed: {log}");
+        }
 
         glApi.DetachShader(program, vertex);
         glApi.DetachShader(program, fragment);
@@ -451,7 +453,11 @@ public sealed class Viewport3DControl : OpenGlControlBase
         glApi.CompileShader(shader);
         glApi.GetShader(shader, ShaderParameterName.CompileStatus, out var status);
         if (status == 0)
-            throw new InvalidOperationException($"{type} compile failed: {glApi.GetShaderInfoLog(shader)}");
+        {
+            var log = glApi.GetShaderInfoLog(shader);
+            Console.Error.WriteLine($"[Viewport3D] {type} compile failed: {log}");
+            throw new InvalidOperationException($"{type} compile failed: {log}");
+        }
         return shader;
     }
 
@@ -462,7 +468,6 @@ public sealed class Viewport3DControl : OpenGlControlBase
         layout(location = 3) in float aMetallic;
         layout(location = 4) in float aRoughness;
         uniform mat4 uMvp;
-        out vec3  vFragPos;
         out vec3  vNormal;
         out vec3  vColor;
         out float vMetallic;
@@ -470,7 +475,6 @@ public sealed class Viewport3DControl : OpenGlControlBase
         void main()
         {
             gl_Position = uMvp * vec4(aPos, 1.0);
-            vFragPos   = aPos;       // mesh is already in world space
             vNormal    = aNormal;
             vColor     = aColor;
             vMetallic  = aMetallic;
@@ -479,40 +483,21 @@ public sealed class Viewport3DControl : OpenGlControlBase
         """;
 
     private const string FragmentSource = """
-        in vec3  vFragPos;
         in vec3  vNormal;
         in vec3  vColor;
         in float vMetallic;
         in float vRoughness;
         uniform vec3 uLightDir;
-        uniform vec3 uViewPos;
         out vec4 fragColor;
         void main()
         {
-            vec3 N = normalize(vNormal);
-            vec3 L = normalize(uLightDir);
-            vec3 V = normalize(uViewPos - vFragPos);
-            vec3 H = normalize(L + V);
-
-            // Two-sided diffuse (abs keeps back-lit faces visible inside the room).
-            float diffAmt = abs(dot(N, L));
-            float diffuse = 0.25 + 0.65 * diffAmt;
-
-            // Blinn-Phong specular — only on the front face of each surface.
-            // roughness^2 remapping keeps the transition perceptually linear.
-            float r2       = vRoughness * vRoughness;
-            float shininess = mix(512.0, 2.0, r2);
-            float NdotH     = max(dot(N, H), 0.0);
-            float NdotL     = dot(N, L);
-            float spec = (NdotL > 0.0) ? pow(NdotH, shininess) : 0.0;
-
-            // Metallic workflow: metallic surfaces tint the specular lobe with base
-            // color (gold/copper reads as colored highlights) and suppress diffuse.
-            vec3 f0        = mix(vec3(0.04), vColor, vMetallic);
-            vec3 diffColor = vColor * (1.0 - vMetallic);
-
-            vec3 color = diffColor * diffuse + f0 * spec;
-            fragColor  = vec4(color, 1.0);
+            float d = abs(dot(normalize(vNormal), normalize(uLightDir)));
+            float sharpness = mix(1.0, 8.0, 1.0 - vRoughness);
+            float light = 0.2 + 0.75 * pow(d, sharpness);
+            float spec = pow(d, mix(4.0, 32.0, 1.0 - vRoughness)) * vMetallic * 0.5;
+            vec3 specTint = mix(vec3(0.8), vColor, vMetallic);
+            vec3 color = vColor * light * (1.0 - vMetallic * 0.3) + specTint * spec;
+            fragColor = vec4(color, 1.0);
         }
         """;
 }
