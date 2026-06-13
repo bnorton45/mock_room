@@ -274,7 +274,7 @@ public sealed class RoomEditorViewModel : ViewModelBase
             OnPropertyChanged(nameof(HasPaintTarget));
             OnPropertyChanged(nameof(HasItemSelection));
             OnPropertyChanged(nameof(SelectedTargetLabel));
-            OnPropertyChanged(nameof(SelectedColor));
+            NotifyColor();
             RefreshItemTexts();
         }
     }
@@ -337,8 +337,12 @@ public sealed class RoomEditorViewModel : ViewModelBase
                     return;
             }
             Recompute();
+            NotifyColor();
         }
     }
+
+    /// <summary>Brush for the color swatch button. Updated whenever SelectedColor changes.</summary>
+    public ISolidColorBrush SelectedColorBrush => new SolidColorBrush(SelectedColor);
 
     /// <summary>Whether the color wheel panel is visible in the sidebar.</summary>
     public bool IsColorPickerOpen
@@ -973,7 +977,7 @@ public sealed class RoomEditorViewModel : ViewModelBase
         // Notify sliders and the unified color panel.
         OnPropertyChanged(nameof(ItemMetallic));
         OnPropertyChanged(nameof(ItemRoughness));
-        OnPropertyChanged(nameof(SelectedColor));
+        NotifyColor();
     }
 
     // Editable fields show a bare value matching the active unit (no unit suffix in the box).
@@ -990,14 +994,17 @@ public sealed class RoomEditorViewModel : ViewModelBase
 
     private static string ColorToHex(Color c) => $"#{c.R:X2}{c.G:X2}{c.B:X2}";
 
+    private void NotifyColor()
+    {
+        OnPropertyChanged(nameof(SelectedColor));
+        OnPropertyChanged(nameof(SelectedColorBrush));
+    }
+
     /// <summary>
     /// After loading, the selected target may have been cleared.  If it was pointing at a
     /// surface, notify the colour property so the panel refreshes.
     /// </summary>
-    private void SyncSurfaceFields()
-    {
-        OnPropertyChanged(nameof(SelectedColor));
-    }
+    private void SyncSurfaceFields() => NotifyColor();
 
     private void RebuildViewpoints()
     {
