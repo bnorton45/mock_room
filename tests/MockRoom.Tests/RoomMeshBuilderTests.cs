@@ -104,7 +104,7 @@ public class RoomMeshBuilderTests
     }
 
     [Fact]
-    public void SelectedItem_ChangesItsColorWithoutChangingGeometry()
+    public void SelectedItem_DoesNotAlterThe3DMesh()
     {
         var room = EmptyRoom();
         var side = Length.FromMeters(1);
@@ -112,11 +112,11 @@ public class RoomMeshBuilderTests
         room.AddItem(item);
 
         var plain = RoomMeshBuilder.Build(room);
-        var highlighted = RoomMeshBuilder.Build(room, freeFloor: null, selected: new ItemPaintTarget(item));
+        var withSelection = RoomMeshBuilder.Build(room, freeFloor: null, selected: new ItemPaintTarget(item));
 
-        // Same triangles (highlight only recolors), but the vertex data differs.
-        Assert.Equal(plain.VertexCount, highlighted.VertexCount);
-        Assert.NotEqual(plain.Vertices, highlighted.Vertices);
+        // Selection no longer bakes a highlight into vertex colors — 3D always shows the true color.
+        Assert.Equal(plain.VertexCount, withSelection.VertexCount);
+        Assert.Equal(plain.Vertices, withSelection.Vertices);
     }
 
     [Fact]
