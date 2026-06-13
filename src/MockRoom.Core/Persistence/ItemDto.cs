@@ -22,5 +22,7 @@ public sealed record ItemDto
     public double PositionYMeters { get; init; }
     public double RotationRadians { get; init; }
 
-    public string ColorHex { get; init; } = "#9AA0A6";
+    public string ColorHex  { get; init; } = "#9AA0A6";
+    public float  Metallic  { get; init; } = 0f;
+    public float  Roughness { get; init; } = 0.8f;
 }

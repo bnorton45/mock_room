@@ -41,12 +41,7 @@ public sealed class FloorPlan2DControl : Control
     public event Action<RoomItem, Vec2>? ItemDragged;
 
     private static readonly IBrush FreeFloorBrush = new SolidColorBrush(Color.FromArgb(0x80, 0x2F, 0x6E, 0xB0));
-
-    // All brushes and pens that use fixed colours are static so they are allocated once,
-    // not on every Render call.
-    private static readonly IBrush WallBrush    = new SolidColorBrush(Color.FromRgb(0x72, 0x7A, 0x84));
-    private static readonly IBrush FloorBrush   = new SolidColorBrush(Color.FromRgb(0x2A, 0x2F, 0x36));
-    private static readonly IPen   InnerEdgePen = new Pen(new SolidColorBrush(Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF)), 1);
+    private static readonly IPen   InnerEdgePen  = new Pen(new SolidColorBrush(Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF)), 1);
 
     static FloorPlan2DControl()
     {
@@ -108,14 +103,18 @@ public sealed class FloorPlan2DControl : Control
         // produces a negative height and the rect is silently skipped by every draw call.
         var floor = new Rect(_offsetX, _offsetY, roomW * _scale, roomL * _scale);
 
+        // Surface brushes derived from the room's current material settings.
+        var wallBrush  = new SolidColorBrush(ParseHex(room.Surfaces.WallColorHex));
+        var floorBrush = new SolidColorBrush(ParseHex(room.Surfaces.FloorColorHex));
+
         // Walls: draw a filled outer shell so the wall mass is clearly visible.
         // 0.15 m wall thickness in world space, minimum 6 px so thin rooms still show walls.
         var wallPx = System.Math.Max(6.0, 0.15 * _scale);
         var outer = floor.Inflate(wallPx);
-        context.FillRectangle(WallBrush, outer);
+        context.FillRectangle(wallBrush, outer);
 
         // Floor interior.
-        context.FillRectangle(FloorBrush, floor);
+        context.FillRectangle(floorBrush, floor);
 
         DrawFreeFloor(context, roomW, roomL);
 
@@ -303,6 +302,13 @@ public sealed class FloorPlan2DControl : Control
     private Point ToPx(Vec2 world) => new(_offsetX + world.X * _scale, _offsetY + (_roomL - world.Y) * _scale);
 
     private Vec2 ToWorld(Point px) => new((px.X - _offsetX) / _scale, _roomL - (px.Y - _offsetY) / _scale);
+
+    private static Color ParseHex(string hex)
+    {
+        if (Color.TryParse(hex, out var c))
+            return c;
+        return Color.FromRgb(0x9A, 0xA0, 0xA6); // fallback grey
+    }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {

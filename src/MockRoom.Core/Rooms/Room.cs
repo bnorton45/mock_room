@@ -1,4 +1,5 @@
 using MockRoom.Core.Items;
+using MockRoom.Core.Rendering;
 using MockRoom.Core.Units;
 
 namespace MockRoom.Core.Rooms;
@@ -22,6 +23,9 @@ public sealed class Room
 
     public RoomDimensions Dimensions { get; set; }
     public UnitSystem PreferredUnits { get; set; }
+
+    /// <summary>Visual material for the floor and walls; editable by the user.</summary>
+    public RoomSurfaces Surfaces { get; set; } = new();
 
     public IReadOnlyList<RoomItem> Items => _items;
     public IReadOnlyList<WallOpening> Openings => _openings;

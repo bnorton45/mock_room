@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using MockRoom.Core.Geometry;
 using MockRoom.Core.Items;
 using MockRoom.Core.Rooms;
@@ -132,6 +131,57 @@ public class RoomMeshBuilderTests
         var withSelection = RoomMeshBuilder.Build(room, freeFloor: null, selected: notInRoom);
 
         Assert.Equal(plain.Vertices, withSelection.Vertices);
+    }
+
+    [Fact]
+    public void CustomSurfaceColors_ProduceSameVertexCount()
+    {
+        var room = EmptyRoom();
+        room.Surfaces = new RoomSurfaces
+        {
+            FloorColorHex = "#FF0000",
+            FloorMetallic  = 0.5f,
+            FloorRoughness = 0.3f,
+            WallColorHex   = "#00FF00",
+            WallMetallic   = 1.0f,
+            WallRoughness  = 0.1f,
+        };
+
+        var mesh = RoomMeshBuilder.Build(room);
+
+        // Surface colors only change vertex data, not vertex count.
+        Assert.Equal(FloorVerts + 4 * WallVerts, mesh.VertexCount);
+        Assert.Equal(mesh.VertexCount * RoomMeshBuilder.FloatsPerVertex, mesh.Vertices.Length);
+    }
+
+    [Fact]
+    public void ItemMaterial_MetallicAndRoughnessAreBakedIntoVertices()
+    {
+        var room = EmptyRoom();
+        var side = Length.FromMeters(1);
+        var item = new BoxItem("Box", ItemCategory.Custom, side, side, side)
+        {
+            Position  = new Vec2(2.5, 2),
+            Metallic  = 0.9f,
+            Roughness = 0.1f,
+        };
+        room.AddItem(item);
+
+        var mesh = RoomMeshBuilder.Build(room);
+
+        // The item occupies the last BoxVerts vertices. Each vertex has
+        // metallic at index 9 and roughness at index 10 within its stride.
+        var itemVertOffset = (FloorVerts + 4 * WallVerts) * RoomMeshBuilder.FloatsPerVertex;
+        var foundMetallic  = false;
+        var foundRoughness = false;
+        for (var i = itemVertOffset; i < mesh.Vertices.Length; i += RoomMeshBuilder.FloatsPerVertex)
+        {
+            if (Math.Abs(mesh.Vertices[i + 9]  - 0.9f) < 1e-5f) foundMetallic  = true;
+            if (Math.Abs(mesh.Vertices[i + 10] - 0.1f) < 1e-5f) foundRoughness = true;
+        }
+
+        Assert.True(foundMetallic,  "metallic not baked into item vertices");
+        Assert.True(foundRoughness, "roughness not baked into item vertices");
     }
 
     [Fact]
