@@ -24,6 +24,14 @@ public sealed record RoomDocument
     public List<ItemDto> Items { get; init; } = [];
     public List<WallOpeningDto> Openings { get; init; } = [];
 
+    // Room surface materials (floor and walls). Absent in older files → defaults apply.
+    public string FloorColorHex { get; init; } = "#292F38";
+    public float  FloorMetallic  { get; init; } = 0f;
+    public float  FloorRoughness { get; init; } = 0.9f;
+    public string WallColorHex  { get; init; } = "#C7CCCE";
+    public float  WallMetallic   { get; init; } = 0f;
+    public float  WallRoughness  { get; init; } = 0.85f;
+
     /// <summary>Version-1 doors, read for backward compatibility. Never written.</summary>
     public List<LegacyDoorDto>? Doors { get; init; }
 }

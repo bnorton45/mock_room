@@ -1,9 +1,11 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Threading.Tasks;
+using Avalonia.Media;
 using MockRoom.Core.Geometry;
 using MockRoom.Core.Items;
 using MockRoom.Core.Persistence;
+using MockRoom.Core.Rendering;
 using MockRoom.Core.Rooms;
 using MockRoom.Core.Spatial;
 using MockRoom.Core.Units;
@@ -65,6 +67,14 @@ public sealed class RoomEditorViewModel : ViewModelBase
     private string _frameLeftText = "";
     private string _frameRightText = "";
     private string? _openingError;
+    // Room surface material backing fields — kept in sync with Room.Surfaces.
+    private Color _floorColor  = Color.Parse("#292F38");
+    private double _floorMetallic  = 0.0;
+    private double _floorRoughness = 0.9;
+    private Color _wallColor   = Color.Parse("#C7CCCE");
+    private double _wallMetallic   = 0.0;
+    private double _wallRoughness  = 0.85;
+
     private bool _is3D;
     private Core.Rendering.CameraMode _cameraMode = Core.Rendering.CameraMode.FirstPerson;
     private double _eyeHeightMeters = 1.6;
@@ -257,6 +267,130 @@ public sealed class RoomEditorViewModel : ViewModelBase
 
     public bool HasSelection => _selectedItem is not null;
 
+    // ── Selected-item color and material ──────────────────────────────────────
+
+    /// <summary>Display color of the selected item as an Avalonia Color (for the color picker).</summary>
+    public Color ItemColor
+    {
+        get => ParseHex(_selectedItem?.ColorHex ?? "#9AA0A6");
+        set
+        {
+            if (_selectedItem is not null)
+            {
+                _selectedItem.ColorHex = $"#{value.R:X2}{value.G:X2}{value.B:X2}";
+                Recompute();
+            }
+        }
+    }
+
+    public double ItemMetallic
+    {
+        get => _selectedItem?.Metallic ?? 0.0;
+        set
+        {
+            if (_selectedItem is not null)
+            {
+                _selectedItem.Metallic = (float)Math.Clamp(value, 0.0, 1.0);
+                Recompute();
+            }
+        }
+    }
+
+    public double ItemRoughness
+    {
+        get => _selectedItem?.Roughness ?? 0.8;
+        set
+        {
+            if (_selectedItem is not null)
+            {
+                _selectedItem.Roughness = (float)Math.Clamp(value, 0.0, 1.0);
+                Recompute();
+            }
+        }
+    }
+
+    // ── Room surface materials ────────────────────────────────────────────────
+
+    public Color FloorColor
+    {
+        get => _floorColor;
+        set
+        {
+            if (SetField(ref _floorColor, value))
+            {
+                Room.Surfaces = Room.Surfaces with { FloorColorHex = ColorToHex(value) };
+                Recompute();
+            }
+        }
+    }
+
+    public double FloorMetallic
+    {
+        get => _floorMetallic;
+        set
+        {
+            if (SetField(ref _floorMetallic, value))
+            {
+                Room.Surfaces = Room.Surfaces with { FloorMetallic = (float)value };
+                Recompute();
+            }
+        }
+    }
+
+    public double FloorRoughness
+    {
+        get => _floorRoughness;
+        set
+        {
+            if (SetField(ref _floorRoughness, value))
+            {
+                Room.Surfaces = Room.Surfaces with { FloorRoughness = (float)value };
+                Recompute();
+            }
+        }
+    }
+
+    public Color WallColor
+    {
+        get => _wallColor;
+        set
+        {
+            if (SetField(ref _wallColor, value))
+            {
+                Room.Surfaces = Room.Surfaces with { WallColorHex = ColorToHex(value) };
+                Recompute();
+            }
+        }
+    }
+
+    public double WallMetallic
+    {
+        get => _wallMetallic;
+        set
+        {
+            if (SetField(ref _wallMetallic, value))
+            {
+                Room.Surfaces = Room.Surfaces with { WallMetallic = (float)value };
+                Recompute();
+            }
+        }
+    }
+
+    public double WallRoughness
+    {
+        get => _wallRoughness;
+        set
+        {
+            if (SetField(ref _wallRoughness, value))
+            {
+                Room.Surfaces = Room.Surfaces with { WallRoughness = (float)value };
+                Recompute();
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+
     /// <summary>When true, dragging and resizing snap to <see cref="SnapStepMeters"/>.</summary>
     public bool SnapEnabled
     {
@@ -426,6 +560,7 @@ public sealed class RoomEditorViewModel : ViewModelBase
         if (_eyeHeightMeters > EyeHeightMaxMeters)
             EyeHeightMeters = EyeHeightMaxMeters;
 
+        SyncSurfaceFields();
         RefreshDimensionTexts();
         RebuildViewpoints();
         Recompute();
@@ -830,21 +965,48 @@ public sealed class RoomEditorViewModel : ViewModelBase
         {
             ItemWidthText = ItemDepthText = ItemHeightText = ItemRotationText = "";
             ItemError = null;
-            return;
+        }
+        else
+        {
+            ItemWidthText = FormatPlain(item.Width);
+            ItemDepthText = FormatPlain(item.Depth);
+            ItemHeightText = FormatPlain(item.Height);
+            ItemRotationText = string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "{0:0.#}", item.Rotation * 180.0 / Math.PI);
+            ItemError = null;
         }
 
-        ItemWidthText = FormatPlain(item.Width);
-        ItemDepthText = FormatPlain(item.Depth);
-        ItemHeightText = FormatPlain(item.Height);
-        ItemRotationText = string.Format(System.Globalization.CultureInfo.InvariantCulture,
-            "{0:0.#}", item.Rotation * 180.0 / Math.PI);
-        ItemError = null;
+        // Always notify the color picker and sliders so they reflect the new selection.
+        OnPropertyChanged(nameof(ItemColor));
+        OnPropertyChanged(nameof(ItemMetallic));
+        OnPropertyChanged(nameof(ItemRoughness));
     }
 
     // Editable fields show a bare value matching the active unit (no unit suffix in the box).
     private string FormatPlain(Length length) => _unitSystem == UnitSystem.Imperial
         ? string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0:0.##}", length.Feet)
         : string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0:0.##}", length.Meters);
+
+    private static Color ParseHex(string hex)
+    {
+        if (Color.TryParse(hex, out var c))
+            return c;
+        return Color.Parse("#9AA0A6");
+    }
+
+    private static string ColorToHex(Color c) => $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+
+    /// <summary>Pulls the current Room.Surfaces values into the backing fields (and notifies).</summary>
+    private void SyncSurfaceFields()
+    {
+        var s = Room.Surfaces;
+        SetField(ref _floorColor,     ParseHex(s.FloorColorHex), nameof(FloorColor));
+        SetField(ref _floorMetallic,  (double)s.FloorMetallic,   nameof(FloorMetallic));
+        SetField(ref _floorRoughness, (double)s.FloorRoughness,  nameof(FloorRoughness));
+        SetField(ref _wallColor,      ParseHex(s.WallColorHex),  nameof(WallColor));
+        SetField(ref _wallMetallic,   (double)s.WallMetallic,    nameof(WallMetallic));
+        SetField(ref _wallRoughness,  (double)s.WallRoughness,   nameof(WallRoughness));
+    }
 
     private void RebuildViewpoints()
     {

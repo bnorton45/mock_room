@@ -16,15 +16,15 @@ namespace MockRoom.Core.Rendering;
 /// </summary>
 public static class RoomMeshBuilder
 {
-    /// <summary>Floats per vertex: position xyz, normal xyz, color rgb.</summary>
-    public const int FloatsPerVertex = 9;
+    /// <summary>Floats per vertex: position xyz, normal xyz, color rgb, metallic, roughness.</summary>
+    public const int FloatsPerVertex = 11;
 
-    private static readonly (float R, float G, float B) FloorColor = (0.16f, 0.18f, 0.21f);
-    private static readonly (float R, float G, float B) FreeFloorColor = (0.18f, 0.40f, 0.66f);
-    private static readonly (float R, float G, float B) WallColor = (0.78f, 0.80f, 0.83f);
-    private static readonly (float R, float G, float B) FallbackItemColor = (0.60f, 0.64f, 0.68f);
-    private static readonly (float R, float G, float B) DoorLeafColor = (0.58f, 0.42f, 0.27f);
-    private static readonly (float R, float G, float B) FrameColor = (0.90f, 0.90f, 0.92f);
+    private readonly record struct Mat(float R, float G, float B, float Metallic, float Roughness);
+
+    private static readonly Mat FreeFloorColor  = new(0.18f, 0.40f, 0.66f, 0f,  0.9f);
+    private static readonly Mat FallbackItem    = new(0.60f, 0.64f, 0.68f, 0f,  0.8f);
+    private static readonly Mat DoorLeafColor   = new(0.58f, 0.42f, 0.27f, 0f,  0.9f);
+    private static readonly Mat FrameColor      = new(0.90f, 0.90f, 0.92f, 0f,  0.8f);
 
     /// <summary>Thickness of an open door leaf and a window frame ring, in meters.</summary>
     private const float LeafThickness = 0.04f;
@@ -54,17 +54,21 @@ public static class RoomMeshBuilder
         var l = (float)dims.Length.Meters;
         var h = (float)dims.Height.Meters;
 
+        var surfaces = room.Surfaces;
+        var floorMat = ParseMaterial(surfaces.FloorColorHex, surfaces.FloorMetallic, surfaces.FloorRoughness);
+        var wallMat  = ParseMaterial(surfaces.WallColorHex,  surfaces.WallMetallic,  surfaces.WallRoughness);
+
         var verts = new List<float>(1024);
 
         // Floor (faces up).
         AddQuad(verts,
             new Vector3(0, 0, 0), new Vector3(w, 0, 0), new Vector3(w, 0, l), new Vector3(0, 0, l),
-            new Vector3(0, 1, 0), FloorColor);
+            new Vector3(0, 1, 0), floorMat);
 
         if (freeFloor is not null)
             AddFreeFloor(verts, freeFloor, w, l);
 
-        AddWalls(verts, room, w, l, h);
+        AddWalls(verts, room, w, l, h, wallMat);
         AddDoorLeaves(verts, room);
 
         foreach (var item in room.Items)
@@ -90,18 +94,18 @@ public static class RoomMeshBuilder
         }
     }
 
-    private static void AddWalls(List<float> verts, Room room, float w, float l, float h)
+    private static void AddWalls(List<float> verts, Room room, float w, float l, float h, Mat wallMat)
     {
         // Each wall is parameterized by distance `a` along the wall and height `y`,
         // mapped into world space. Openings on the wall become voids along `a`, each
         // with a sill below (windows) and a lintel above.
-        AddWall(verts, (a, y) => new Vector3(a, y, 0), w, h, new Vector3(0, 0, 1), WallColor,
+        AddWall(verts, (a, y) => new Vector3(a, y, 0), w, h, new Vector3(0, 0, 1), wallMat,
             OpeningsOn(room, WallSide.South, w, h));
-        AddWall(verts, (a, y) => new Vector3(a, y, l), w, h, new Vector3(0, 0, -1), WallColor,
+        AddWall(verts, (a, y) => new Vector3(a, y, l), w, h, new Vector3(0, 0, -1), wallMat,
             OpeningsOn(room, WallSide.North, w, h));
-        AddWall(verts, (a, y) => new Vector3(0, y, a), l, h, new Vector3(1, 0, 0), WallColor,
+        AddWall(verts, (a, y) => new Vector3(0, y, a), l, h, new Vector3(1, 0, 0), wallMat,
             OpeningsOn(room, WallSide.West, l, h));
-        AddWall(verts, (a, y) => new Vector3(w, y, a), l, h, new Vector3(-1, 0, 0), WallColor,
+        AddWall(verts, (a, y) => new Vector3(w, y, a), l, h, new Vector3(-1, 0, 0), wallMat,
             OpeningsOn(room, WallSide.East, l, h));
     }
 
@@ -152,7 +156,7 @@ public static class RoomMeshBuilder
     /// (void) pane. <paramref name="map"/> turns (alongWall, height) into world space.
     /// </summary>
     private static void AddWall(List<float> verts, Func<float, float, Vector3> map, float wallLength, float wallHeight,
-        Vector3 normal, (float, float, float) color, List<WallCut> openings)
+        Vector3 normal, Mat color, List<WallCut> openings)
     {
         var cursor = 0f;
         foreach (var cut in openings)
@@ -233,19 +237,27 @@ public static class RoomMeshBuilder
     }
 
     private static void AddPanel(List<float> verts, Func<float, float, Vector3> map,
-        float aLo, float aHi, float yLo, float yHi, Vector3 normal, (float, float, float) color)
+        float aLo, float aHi, float yLo, float yHi, Vector3 normal, Mat color)
         => AddQuad(verts, map(aLo, yLo), map(aHi, yLo), map(aHi, yHi), map(aLo, yHi), normal, color);
 
     private static void AddItem(List<float> verts, RoomItem item, bool selected)
     {
-        var color = ParseColor(item.ColorHex);
+        var color = ParseMaterial(item.ColorHex, item.Metallic, item.Roughness);
         if (selected)
-            color = Lerp(color, (1f, 1f, 1f), SelectedHighlight);
+        {
+            // Brighten color toward white to highlight the selected item.
+            color = new Mat(
+                Lerp(color.R, 1f, SelectedHighlight),
+                Lerp(color.G, 1f, SelectedHighlight),
+                Lerp(color.B, 1f, SelectedHighlight),
+                color.Metallic,
+                color.Roughness);
+        }
         AddCuboid(verts, item.Footprint, (float)item.Height.Meters, color);
     }
 
     /// <summary>Extrudes a floor footprint into a colored cuboid of the given height.</summary>
-    private static void AddCuboid(List<float> verts, FootprintRect footprint, float h, (float, float, float) color)
+    private static void AddCuboid(List<float> verts, FootprintRect footprint, float h, Mat color)
     {
         var (p0, p1, p2, p3) = footprint.Corners();
 
@@ -263,7 +275,7 @@ public static class RoomMeshBuilder
         AddSide(verts, p3, p0, h, color);
     }
 
-    private static void AddSide(List<float> verts, Vec2 a, Vec2 b, float h, (float, float, float) color)
+    private static void AddSide(List<float> verts, Vec2 a, Vec2 b, float h, Mat color)
     {
         var a0 = new Vector3((float)a.X, 0, (float)a.Y);
         var b0 = new Vector3((float)b.X, 0, (float)b.Y);
@@ -275,7 +287,7 @@ public static class RoomMeshBuilder
     }
 
     private static void AddQuad(List<float> verts, Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3,
-        Vector3 normal, (float R, float G, float B) color)
+        Vector3 normal, Mat color)
     {
         AddVertex(verts, p0, normal, color);
         AddVertex(verts, p1, normal, color);
@@ -285,7 +297,7 @@ public static class RoomMeshBuilder
         AddVertex(verts, p3, normal, color);
     }
 
-    private static void AddVertex(List<float> verts, Vector3 p, Vector3 normal, (float R, float G, float B) color)
+    private static void AddVertex(List<float> verts, Vector3 p, Vector3 normal, Mat m)
     {
         verts.Add(p.X);
         verts.Add(p.Y);
@@ -293,17 +305,16 @@ public static class RoomMeshBuilder
         verts.Add(normal.X);
         verts.Add(normal.Y);
         verts.Add(normal.Z);
-        verts.Add(color.R);
-        verts.Add(color.G);
-        verts.Add(color.B);
+        verts.Add(m.R);
+        verts.Add(m.G);
+        verts.Add(m.B);
+        verts.Add(m.Metallic);
+        verts.Add(m.Roughness);
     }
 
-    /// <summary>Linearly blends <paramref name="a"/> toward <paramref name="b"/> by <paramref name="t"/> (0..1).</summary>
-    private static (float R, float G, float B) Lerp((float R, float G, float B) a, (float R, float G, float B) b, float t)
-        => (a.R + (b.R - a.R) * t, a.G + (b.G - a.G) * t, a.B + (b.B - a.B) * t);
+    private static float Lerp(float a, float b, float t) => a + (b - a) * t;
 
-    /// <summary>Parses a "#RRGGBB" (or "RRGGBB") string to normalized rgb; falls back to grey.</summary>
-    private static (float R, float G, float B) ParseColor(string hex)
+    private static Mat ParseMaterial(string hex, float metallic, float roughness)
     {
         var s = hex.AsSpan().Trim();
         if (s.Length > 0 && s[0] == '#')
@@ -313,9 +324,9 @@ public static class RoomMeshBuilder
             || !byte.TryParse(s[2..4], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var g)
             || !byte.TryParse(s[4..6], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b))
         {
-            return FallbackItemColor;
+            return FallbackItem with { Metallic = metallic, Roughness = roughness };
         }
 
-        return (r / 255f, g / 255f, b / 255f);
+        return new Mat(r / 255f, g / 255f, b / 255f, metallic, roughness);
     }
 }

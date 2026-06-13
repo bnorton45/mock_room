@@ -43,6 +43,12 @@ public abstract class RoomItem
     /// <summary>Display color as a "#RRGGBB" hex string.</summary>
     public string ColorHex { get; set; } = "#9AA0A6";
 
+    /// <summary>PBR metallic factor (0 = dielectric, 1 = fully metallic).</summary>
+    public float Metallic { get; set; } = 0f;
+
+    /// <summary>PBR roughness factor (0 = mirror-smooth, 1 = fully rough/matte).</summary>
+    public float Roughness { get; set; } = 0.8f;
+
     /// <summary>Discriminator for rendering and serialization, e.g. "box".</summary>
     public abstract string ShapeKind { get; }
 

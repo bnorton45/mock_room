@@ -1,5 +1,6 @@
 using MockRoom.Core.Geometry;
 using MockRoom.Core.Items;
+using MockRoom.Core.Rendering;
 using MockRoom.Core.Rooms;
 using MockRoom.Core.Units;
 
@@ -15,6 +16,7 @@ public static class RoomMapper
     public static RoomDocument ToDocument(Room room)
     {
         var dims = room.Dimensions;
+        var surfaces = room.Surfaces;
         return new RoomDocument
         {
             Version = RoomDocument.CurrentVersion,
@@ -24,13 +26,30 @@ public static class RoomMapper
             PreferredUnits = room.PreferredUnits,
             Items = room.Items.Select(ToDto).ToList(),
             Openings = room.Openings.Select(ToDto).ToList(),
+            FloorColorHex = surfaces.FloorColorHex,
+            FloorMetallic  = surfaces.FloorMetallic,
+            FloorRoughness = surfaces.FloorRoughness,
+            WallColorHex   = surfaces.WallColorHex,
+            WallMetallic   = surfaces.WallMetallic,
+            WallRoughness  = surfaces.WallRoughness,
         };
     }
 
     public static Room FromDocument(RoomDocument document)
     {
         var dims = RoomDimensions.FromMeters(document.WidthMeters, document.LengthMeters, document.HeightMeters);
-        var room = new Room(dims, document.PreferredUnits);
+        var room = new Room(dims, document.PreferredUnits)
+        {
+            Surfaces = new RoomSurfaces
+            {
+                FloorColorHex = document.FloorColorHex,
+                FloorMetallic  = document.FloorMetallic,
+                FloorRoughness = document.FloorRoughness,
+                WallColorHex   = document.WallColorHex,
+                WallMetallic   = document.WallMetallic,
+                WallRoughness  = document.WallRoughness,
+            },
+        };
         foreach (var item in document.Items)
             room.AddItem(FromDto(item));
         // Openings may be absent in older files; the legacy "Doors" list below covers those.
@@ -58,6 +77,8 @@ public static class RoomMapper
         PositionYMeters = item.Position.Y,
         RotationRadians = item.Rotation,
         ColorHex = item.ColorHex,
+        Metallic  = item.Metallic,
+        Roughness = item.Roughness,
     };
 
     private static RoomItem FromDto(ItemDto dto) =>
@@ -71,6 +92,8 @@ public static class RoomMapper
             Position = new Vec2(dto.PositionXMeters, dto.PositionYMeters),
             Rotation = dto.RotationRadians,
             ColorHex = dto.ColorHex,
+            Metallic  = dto.Metallic,
+            Roughness = dto.Roughness,
         };
 
     private static WallOpeningDto ToDto(WallOpening opening) => new()

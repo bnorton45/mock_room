@@ -181,8 +181,66 @@
                                 Command="{Binding ApplyItemCommand}" />
                         <TextBlock Text="{Binding ItemError}" Foreground="#E06C6C" FontSize="11"
                                    TextWrapping="Wrap" IsVisible="{Binding HasItemError}" />
+
+                        <!-- Item color and material -->
+                        <TextBlock Text="COLOR" FontSize="10" Foreground="#7A828C" Margin="0,6,0,0" />
+                        <ColorPicker Color="{Binding ItemColor, Mode=TwoWay}"
+                                     IsEnabled="{Binding HasSelection}"
+                                     HorizontalAlignment="Stretch" />
+                        <TextBlock Text="MATERIAL" FontSize="10" Foreground="#7A828C" Margin="0,4,0,0" />
+                        <Grid ColumnDefinitions="68,*,32" RowDefinitions="Auto,Auto"
+                              IsEnabled="{Binding HasSelection}">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Metallic"  VerticalAlignment="Center" FontSize="11" Margin="0,0,0,4" />
+                            <Slider   Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="1"
+                                      Value="{Binding ItemMetallic, Mode=TwoWay}" Margin="4,0,4,4" />
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding ItemMetallic, StringFormat={}{0:0.00}}"
+                                       FontSize="10" Foreground="#9AA0A6" VerticalAlignment="Center" Margin="0,0,0,4" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Roughness" VerticalAlignment="Center" FontSize="11" />
+                            <Slider   Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="1"
+                                      Value="{Binding ItemRoughness, Mode=TwoWay}" Margin="4,0,4,0" />
+                            <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding ItemRoughness, StringFormat={}{0:0.00}}"
+                                       FontSize="10" Foreground="#9AA0A6" VerticalAlignment="Center" />
+                        </Grid>
+
                         <Button Content="Remove selected" HorizontalAlignment="Stretch"
                                 Command="{Binding RemoveSelectedCommand}" />
+                    </StackPanel>
+
+                    <!-- Room surface materials -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="ROOM SURFACES" FontSize="11" Foreground="#7A828C" />
+
+                        <TextBlock Text="FLOOR" FontSize="10" Foreground="#9AA0A6" />
+                        <ColorPicker Color="{Binding FloorColor, Mode=TwoWay}"
+                                     HorizontalAlignment="Stretch" />
+                        <Grid ColumnDefinitions="68,*,32" RowDefinitions="Auto,Auto">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Metallic"  VerticalAlignment="Center" FontSize="11" Margin="0,0,0,4" />
+                            <Slider   Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="1"
+                                      Value="{Binding FloorMetallic, Mode=TwoWay}" Margin="4,0,4,4" />
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding FloorMetallic, StringFormat={}{0:0.00}}"
+                                       FontSize="10" Foreground="#9AA0A6" VerticalAlignment="Center" Margin="0,0,0,4" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Roughness" VerticalAlignment="Center" FontSize="11" />
+                            <Slider   Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="1"
+                                      Value="{Binding FloorRoughness, Mode=TwoWay}" Margin="4,0,4,0" />
+                            <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding FloorRoughness, StringFormat={}{0:0.00}}"
+                                       FontSize="10" Foreground="#9AA0A6" VerticalAlignment="Center" />
+                        </Grid>
+
+                        <TextBlock Text="WALLS" FontSize="10" Foreground="#9AA0A6" Margin="0,4,0,0" />
+                        <ColorPicker Color="{Binding WallColor, Mode=TwoWay}"
+                                     HorizontalAlignment="Stretch" />
+                        <Grid ColumnDefinitions="68,*,32" RowDefinitions="Auto,Auto">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Metallic"  VerticalAlignment="Center" FontSize="11" Margin="0,0,0,4" />
+                            <Slider   Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="1"
+                                      Value="{Binding WallMetallic, Mode=TwoWay}" Margin="4,0,4,4" />
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding WallMetallic, StringFormat={}{0:0.00}}"
+                                       FontSize="10" Foreground="#9AA0A6" VerticalAlignment="Center" Margin="0,0,0,4" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Roughness" VerticalAlignment="Center" FontSize="11" />
+                            <Slider   Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="1"
+                                      Value="{Binding WallRoughness, Mode=TwoWay}" Margin="4,0,4,0" />
+                            <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding WallRoughness, StringFormat={}{0:0.00}}"
+                                       FontSize="10" Foreground="#9AA0A6" VerticalAlignment="Center" />
+                        </Grid>
                     </StackPanel>
 
                 </StackPanel>
