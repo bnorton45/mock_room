@@ -104,7 +104,7 @@
                         <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto"
                               IsEnabled="{Binding HasOpeningSelection}">
                             <TextBlock Grid.Row="0" Grid.Column="0" Text="Offset" VerticalAlignment="Center" Margin="0,0,0,6"
-                                       ToolTip.Tip="Distance from the wall start to the near edge of the opening. Type 0 to place it flush against the wall corner." />
+                                       ToolTip.Tip="Distance from the wall start to the near edge of the opening." />
                             <TextBox  Grid.Row="0" Grid.Column="1" Text="{Binding OpeningOffsetText}" Margin="0,0,0,6" />
                             <TextBlock Grid.Row="1" Grid.Column="0" Text="Width" VerticalAlignment="Center" Margin="0,0,0,6" />
                             <TextBox  Grid.Row="1" Grid.Column="1" Text="{Binding OpeningWidthText}" Margin="0,0,0,6" />
@@ -137,9 +137,6 @@
                                 <TextBlock Grid.Row="1" Grid.Column="2" Text="Right" VerticalAlignment="Center" />
                                 <TextBox  Grid.Row="1" Grid.Column="3" Text="{Binding FrameRightText}" />
                             </Grid>
-                            <TextBlock Text="Sill = distance from the floor to the window bottom."
-                                       FontSize="10" Foreground="#5E666F" TextWrapping="Wrap"
-                                       IsVisible="{Binding OpeningIsWindow}" />
                         </StackPanel>
                         <Button Content="Apply opening" HorizontalAlignment="Stretch"
                                 IsEnabled="{Binding HasOpeningSelection}"
@@ -158,14 +155,13 @@
                                    Foreground="#5E666F" TextWrapping="Wrap" />
                     </StackPanel>
 
-                    <!-- Selection / item properties -->
-                    <StackPanel Spacing="6">
+                    <!-- Item size / rotation — only when an item is selected -->
+                    <StackPanel Spacing="6" IsVisible="{Binding HasItemSelection}">
                         <TextBlock Text="SELECTED ITEM" FontSize="11" Foreground="#7A828C" />
-                        <TextBlock Text="{Binding SelectedItem.Name, FallbackValue='(none)', TargetNullValue='(none)'}"
+                        <TextBlock Text="{Binding SelectedItem.Name, FallbackValue='', TargetNullValue=''}"
                                    Foreground="#C9D1D9" />
 
-                        <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto,Auto,Auto"
-                              IsEnabled="{Binding HasSelection}">
+                        <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto,Auto,Auto">
                             <TextBlock Grid.Row="0" Grid.Column="0" Text="Width" VerticalAlignment="Center" Margin="0,0,0,6" />
                             <TextBox  Grid.Row="0" Grid.Column="1" Text="{Binding ItemWidthText}" Margin="0,0,0,6" />
                             <TextBlock Grid.Row="1" Grid.Column="0" Text="Depth" VerticalAlignment="Center" Margin="0,0,0,6" />
@@ -177,19 +173,12 @@
                         </Grid>
 
                         <Button Content="Apply size" HorizontalAlignment="Stretch"
-                                IsEnabled="{Binding HasSelection}"
                                 Command="{Binding ApplyItemCommand}" />
                         <TextBlock Text="{Binding ItemError}" Foreground="#E06C6C" FontSize="11"
                                    TextWrapping="Wrap" IsVisible="{Binding HasItemError}" />
 
-                        <!-- Item color and material -->
-                        <TextBlock Text="COLOR" FontSize="10" Foreground="#7A828C" Margin="0,6,0,0" />
-                        <ColorPicker Color="{Binding ItemColor, Mode=TwoWay}"
-                                     IsEnabled="{Binding HasSelection}"
-                                     HorizontalAlignment="Stretch" />
                         <TextBlock Text="MATERIAL" FontSize="10" Foreground="#7A828C" Margin="0,4,0,0" />
-                        <Grid ColumnDefinitions="68,*,32" RowDefinitions="Auto,Auto"
-                              IsEnabled="{Binding HasSelection}">
+                        <Grid ColumnDefinitions="68,*,32" RowDefinitions="Auto,Auto">
                             <TextBlock Grid.Row="0" Grid.Column="0" Text="Metallic"  VerticalAlignment="Center" FontSize="11" Margin="0,0,0,4" />
                             <Slider   Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="1"
                                       Value="{Binding ItemMetallic, Mode=TwoWay}" Margin="4,0,4,4" />
@@ -202,46 +191,46 @@
                                        FontSize="10" Foreground="#9AA0A6" VerticalAlignment="Center" />
                         </Grid>
 
-                        <Button Content="Remove selected" HorizontalAlignment="Stretch"
+                        <Button Content="Remove item" HorizontalAlignment="Stretch"
                                 Command="{Binding RemoveSelectedCommand}" />
                     </StackPanel>
 
-                    <!-- Room surface materials -->
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="ROOM SURFACES" FontSize="11" Foreground="#7A828C" />
+                    <!-- Paint: unified color picker for any selected surface or item -->
+                    <StackPanel Spacing="6" IsVisible="{Binding HasPaintTarget}">
+                        <TextBlock Text="PAINT" FontSize="11" Foreground="#7A828C" />
+                        <TextBlock Text="{Binding SelectedTargetLabel}" Foreground="#C9D1D9" FontSize="12" />
 
-                        <TextBlock Text="FLOOR" FontSize="10" Foreground="#9AA0A6" />
-                        <ColorPicker Color="{Binding FloorColor, Mode=TwoWay}"
-                                     HorizontalAlignment="Stretch" />
-                        <Grid ColumnDefinitions="68,*,32" RowDefinitions="Auto,Auto">
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Metallic"  VerticalAlignment="Center" FontSize="11" Margin="0,0,0,4" />
-                            <Slider   Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="1"
-                                      Value="{Binding FloorMetallic, Mode=TwoWay}" Margin="4,0,4,4" />
-                            <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding FloorMetallic, StringFormat={}{0:0.00}}"
-                                       FontSize="10" Foreground="#9AA0A6" VerticalAlignment="Center" Margin="0,0,0,4" />
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Roughness" VerticalAlignment="Center" FontSize="11" />
-                            <Slider   Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="1"
-                                      Value="{Binding FloorRoughness, Mode=TwoWay}" Margin="4,0,4,0" />
-                            <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding FloorRoughness, StringFormat={}{0:0.00}}"
-                                       FontSize="10" Foreground="#9AA0A6" VerticalAlignment="Center" />
-                        </Grid>
+                        <!-- Color swatch button: shows current color, click to toggle wheel -->
+                        <Button Command="{Binding ToggleColorPickerCommand}"
+                                Padding="0" CornerRadius="4" HorizontalAlignment="Left"
+                                ToolTip.Tip="Click to open color wheel">
+                            <Border Width="80" Height="32" CornerRadius="4"
+                                    BorderThickness="1" BorderBrush="#444C56">
+                                <Border.Background>
+                                    <SolidColorBrush Color="{Binding SelectedColor}" />
+                                </Border.Background>
+                            </Border>
+                        </Button>
 
-                        <TextBlock Text="WALLS" FontSize="10" Foreground="#9AA0A6" Margin="0,4,0,0" />
-                        <ColorPicker Color="{Binding WallColor, Mode=TwoWay}"
-                                     HorizontalAlignment="Stretch" />
-                        <Grid ColumnDefinitions="68,*,32" RowDefinitions="Auto,Auto">
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Metallic"  VerticalAlignment="Center" FontSize="11" Margin="0,0,0,4" />
-                            <Slider   Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="1"
-                                      Value="{Binding WallMetallic, Mode=TwoWay}" Margin="4,0,4,4" />
-                            <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding WallMetallic, StringFormat={}{0:0.00}}"
-                                       FontSize="10" Foreground="#9AA0A6" VerticalAlignment="Center" Margin="0,0,0,4" />
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Roughness" VerticalAlignment="Center" FontSize="11" />
-                            <Slider   Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="1"
-                                      Value="{Binding WallRoughness, Mode=TwoWay}" Margin="4,0,4,0" />
-                            <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding WallRoughness, StringFormat={}{0:0.00}}"
-                                       FontSize="10" Foreground="#9AA0A6" VerticalAlignment="Center" />
-                        </Grid>
+                        <!-- Color wheel — appears when IsColorPickerOpen -->
+                        <Border IsVisible="{Binding IsColorPickerOpen}"
+                                Background="#202830" CornerRadius="6" Padding="8">
+                            <ColorView Color="{Binding SelectedColor, Mode=TwoWay}"
+                                       ColorSpectrumShape="Ring"
+                                       IsAlphaEnabled="False"
+                                       IsAlphaVisible="False"
+                                       HorizontalAlignment="Stretch" />
+                        </Border>
+
+                        <TextBlock Text="Click the floor, a wall, a door, window, or item to select it."
+                                   FontSize="10" Foreground="#5E666F" TextWrapping="Wrap"
+                                   IsVisible="{Binding !HasPaintTarget}" />
                     </StackPanel>
+
+                    <!-- Hint when nothing is selected -->
+                    <TextBlock IsVisible="{Binding !HasPaintTarget}"
+                               Text="Click the floor, a wall, a door, a window, or a box to select and paint it."
+                               FontSize="10" Foreground="#5E666F" TextWrapping="Wrap" />
 
                 </StackPanel>
             </ScrollViewer>
@@ -264,14 +253,14 @@
                     Room="{Binding Room}"
                     RenderVersion="{Binding RenderVersion}"
                     SpaceReport="{Binding LastReport}"
-                    SelectedItem="{Binding SelectedItem, Mode=TwoWay}" />
+                    SelectedTarget="{Binding SelectedTarget, Mode=TwoWay}" />
 
                 <ctrl:Viewport3DControl x:Name="View3D"
                     IsVisible="{Binding Is3D}"
                     Room="{Binding Room}"
                     RenderVersion="{Binding RenderVersion}"
                     SpaceReport="{Binding LastReport}"
-                    SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
+                    SelectedTarget="{Binding SelectedTarget, Mode=TwoWay}"
                     CameraMode="{Binding CameraMode}"
                     EyeHeight="{Binding EyeHeightMeters, Mode=TwoWay}"
                     ViewpointX="{Binding ViewpointX}"
@@ -280,12 +269,10 @@
                     ViewpointVersion="{Binding ViewpointVersion}" />
 
                 <!-- Transparent input layer: GL surfaces aren't hit-testable, so this
-                     forwards drag/zoom to the viewport. Sits below the corner panels
-                     in z-order so their buttons and slider stay clickable. -->
+                     forwards drag/zoom to the viewport. -->
                 <Border x:Name="View3DInput" IsVisible="{Binding Is3D}" Background="Transparent" />
 
-                <!-- Item name badges rendered above the 3D scene; IsHitTestVisible=False
-                     lets all pointer events fall through to View3DInput. -->
+                <!-- Item name badges rendered above the 3D scene. -->
                 <ctrl:ItemLabels3DControl x:Name="Labels3D"
                     IsVisible="{Binding Is3D}"
                     IsHitTestVisible="False"
@@ -332,7 +319,7 @@
                                         Padding="8,3" FontSize="11" />
                             </StackPanel>
                         </StackPanel>
-                        <TextBlock Text="Drag to look around · wheel to zoom (orbit) · click an item to select."
+                        <TextBlock Text="Drag to look · wheel to zoom (orbit) · click to select and paint."
                                    FontSize="10" Foreground="#5E666F" TextWrapping="Wrap" />
                     </StackPanel>
                 </Border>

@@ -22,4 +22,7 @@ public sealed record WallOpeningDto
     public double FrameBottomMeters { get; init; }
     public double FrameLeftMeters { get; init; }
     public double FrameRightMeters { get; init; }
+
+    /// <summary>Paint color of the opening's leaves and frames. Defaults to a natural wood tone.</summary>
+    public string ColorHex { get; init; } = "#D4C4B0";
 }

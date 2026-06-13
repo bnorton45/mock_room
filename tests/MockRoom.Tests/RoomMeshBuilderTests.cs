@@ -112,7 +112,7 @@ public class RoomMeshBuilderTests
         room.AddItem(item);
 
         var plain = RoomMeshBuilder.Build(room);
-        var highlighted = RoomMeshBuilder.Build(room, freeFloor: null, selected: item);
+        var highlighted = RoomMeshBuilder.Build(room, freeFloor: null, selected: new ItemPaintTarget(item));
 
         // Same triangles (highlight only recolors), but the vertex data differs.
         Assert.Equal(plain.VertexCount, highlighted.VertexCount);
@@ -128,7 +128,7 @@ public class RoomMeshBuilderTests
         var notInRoom = new BoxItem("Other", ItemCategory.Custom, side, side, side);
 
         var plain = RoomMeshBuilder.Build(room);
-        var withSelection = RoomMeshBuilder.Build(room, freeFloor: null, selected: notInRoom);
+        var withSelection = RoomMeshBuilder.Build(room, freeFloor: null, selected: new ItemPaintTarget(notInRoom));
 
         Assert.Equal(plain.Vertices, withSelection.Vertices);
     }
@@ -139,12 +139,15 @@ public class RoomMeshBuilderTests
         var room = EmptyRoom();
         room.Surfaces = new RoomSurfaces
         {
-            FloorColorHex = "#FF0000",
-            FloorMetallic  = 0.5f,
-            FloorRoughness = 0.3f,
-            WallColorHex   = "#00FF00",
-            WallMetallic   = 1.0f,
-            WallRoughness  = 0.1f,
+            FloorColorHex     = "#FF0000",
+            FloorMetallic     = 0.5f,
+            FloorRoughness    = 0.3f,
+            NorthWallColorHex = "#00FF00",
+            SouthWallColorHex = "#00FF00",
+            EastWallColorHex  = "#00FF00",
+            WestWallColorHex  = "#00FF00",
+            WallMetallic      = 1.0f,
+            WallRoughness     = 0.1f,
         };
 
         var mesh = RoomMeshBuilder.Build(room);

@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Media;
 using MockRoom.Core.Geometry;
 using MockRoom.Core.Items;
+using MockRoom.Core.Rendering;
 using MockRoom.Core.Rooms;
 using MockRoom.Core.Spatial;
 
@@ -23,9 +24,9 @@ public sealed class FloorPlan2DControl : Control
     public static readonly StyledProperty<int> RenderVersionProperty =
         AvaloniaProperty.Register<FloorPlan2DControl, int>(nameof(RenderVersion));
 
-    public static readonly StyledProperty<RoomItem?> SelectedItemProperty =
-        AvaloniaProperty.Register<FloorPlan2DControl, RoomItem?>(
-            nameof(SelectedItem), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
+    public static readonly StyledProperty<PaintTarget?> SelectedTargetProperty =
+        AvaloniaProperty.Register<FloorPlan2DControl, PaintTarget?>(
+            nameof(SelectedTarget), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
 
     public static readonly StyledProperty<SpaceReport?> SpaceReportProperty =
         AvaloniaProperty.Register<FloorPlan2DControl, SpaceReport?>(nameof(SpaceReport));
@@ -46,7 +47,7 @@ public sealed class FloorPlan2DControl : Control
     static FloorPlan2DControl()
     {
         AffectsRender<FloorPlan2DControl>(
-            RoomProperty, RenderVersionProperty, SelectedItemProperty, SpaceReportProperty);
+            RoomProperty, RenderVersionProperty, SelectedTargetProperty, SpaceReportProperty);
     }
 
     public Room? Room
@@ -61,10 +62,10 @@ public sealed class FloorPlan2DControl : Control
         set => SetValue(RenderVersionProperty, value);
     }
 
-    public RoomItem? SelectedItem
+    public PaintTarget? SelectedTarget
     {
-        get => GetValue(SelectedItemProperty);
-        set => SetValue(SelectedItemProperty, value);
+        get => GetValue(SelectedTargetProperty);
+        set => SetValue(SelectedTargetProperty, value);
     }
 
     /// <summary>Latest space report; its grid drives the blue free-floor overlay.</summary>
@@ -103,17 +104,33 @@ public sealed class FloorPlan2DControl : Control
         // produces a negative height and the rect is silently skipped by every draw call.
         var floor = new Rect(_offsetX, _offsetY, roomW * _scale, roomL * _scale);
 
-        // Surface brushes derived from the room's current material settings.
-        var wallBrush  = new SolidColorBrush(ParseHex(room.Surfaces.WallColorHex));
-        var floorBrush = new SolidColorBrush(ParseHex(room.Surfaces.FloorColorHex));
-
-        // Walls: draw a filled outer shell so the wall mass is clearly visible.
         // 0.15 m wall thickness in world space, minimum 6 px so thin rooms still show walls.
         var wallPx = System.Math.Max(6.0, 0.15 * _scale);
         var outer = floor.Inflate(wallPx);
-        context.FillRectangle(wallBrush, outer);
 
-        // Floor interior.
+        var selectedWall = (SelectedTarget as WallPaintTarget)?.Side;
+
+        // Four wall strips — each gets its own colour, highlighted when selected.
+        // North/South strips span full outer width; East/West fill only the floor height.
+        void DrawWallStrip(Rect rect, WallSide side)
+        {
+            var hex = room.Surfaces.WallColorFor(side);
+            IBrush brush = selectedWall == side
+                ? new SolidColorBrush(Brighten(ParseHex(hex)))
+                : new SolidColorBrush(ParseHex(hex));
+            context.FillRectangle(brush, rect);
+        }
+
+        DrawWallStrip(new Rect(outer.X, outer.Y, outer.Width, wallPx), WallSide.North);
+        DrawWallStrip(new Rect(outer.X, floor.Y + floor.Height, outer.Width, wallPx), WallSide.South);
+        DrawWallStrip(new Rect(outer.X, floor.Y, wallPx, floor.Height), WallSide.West);
+        DrawWallStrip(new Rect(floor.X + floor.Width, floor.Y, wallPx, floor.Height), WallSide.East);
+
+        // Floor interior — brightened when selected.
+        var floorColor = ParseHex(room.Surfaces.FloorColorHex);
+        IBrush floorBrush = SelectedTarget is FloorPaintTarget
+            ? new SolidColorBrush(Brighten(floorColor))
+            : new SolidColorBrush(floorColor);
         context.FillRectangle(floorBrush, floor);
 
         DrawFreeFloor(context, roomW, roomL);
@@ -123,8 +140,9 @@ public sealed class FloorPlan2DControl : Control
 
         DrawOpenings(context, room);
 
+        var selectedItem = (SelectedTarget as ItemPaintTarget)?.Item;
         foreach (var item in room.Items)
-            DrawItem(context, item, ReferenceEquals(item, SelectedItem));
+            DrawItem(context, item, ReferenceEquals(item, selectedItem));
 
         DrawDimensionLabels(context, room, floor);
         DrawCompass(context);
@@ -307,7 +325,13 @@ public sealed class FloorPlan2DControl : Control
     {
         if (Color.TryParse(hex, out var c))
             return c;
-        return Color.FromRgb(0x9A, 0xA0, 0xA6); // fallback grey
+        return Color.FromRgb(0x9A, 0xA0, 0xA6);
+    }
+
+    private static Color Brighten(Color c)
+    {
+        static byte Mix(byte v) => (byte)(v + (255 - v) * 55 / 100);
+        return Color.FromRgb(Mix(c.R), Mix(c.G), Mix(c.B));
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
@@ -318,30 +342,49 @@ public sealed class FloorPlan2DControl : Control
             return;
 
         var world = ToWorld(e.GetPosition(this));
-        // Topmost (last drawn) item wins.
+
+        // 1. Items: topmost (last drawn) wins.
         for (var i = room.Items.Count - 1; i >= 0; i--)
         {
             var item = room.Items[i];
             if (item.Footprint.Contains(world))
             {
-                SelectedItem = item;
+                SelectedTarget = new ItemPaintTarget(item);
                 _dragging = true;
-                _grabOffset = world - item.Position; // keep the grab point under the cursor
+                _grabOffset = world - item.Position;
                 e.Pointer.Capture(this);
                 return;
             }
         }
-        SelectedItem = null;
+
+        // 2. Walls: click within ~0.25 m world-space of any wall edge.
+        var tol = System.Math.Max(0.2, 20.0 / _scale);
+        var w = room.Dimensions.Width.Meters;
+        var l = room.Dimensions.Length.Meters;
+
+        if (world.Y >= l - tol) { SelectedTarget = new WallPaintTarget(WallSide.North); return; }
+        if (world.Y <= tol)     { SelectedTarget = new WallPaintTarget(WallSide.South); return; }
+        if (world.X <= tol)     { SelectedTarget = new WallPaintTarget(WallSide.West);  return; }
+        if (world.X >= w - tol) { SelectedTarget = new WallPaintTarget(WallSide.East);  return; }
+
+        // 3. Floor: anywhere inside the room bounds.
+        if (world.X >= 0 && world.X <= w && world.Y >= 0 && world.Y <= l)
+        {
+            SelectedTarget = new FloorPaintTarget();
+            return;
+        }
+
+        SelectedTarget = null;
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        if (!_dragging || SelectedItem is null)
+        if (!_dragging || SelectedTarget is not ItemPaintTarget { Item: var dragItem })
             return;
 
         var world = ToWorld(e.GetPosition(this));
-        ItemDragged?.Invoke(SelectedItem, world - _grabOffset);
+        ItemDragged?.Invoke(dragItem, world - _grabOffset);
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)

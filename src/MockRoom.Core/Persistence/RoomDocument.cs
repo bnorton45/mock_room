@@ -28,9 +28,18 @@ public sealed record RoomDocument
     public string FloorColorHex { get; init; } = "#292F38";
     public float  FloorMetallic  { get; init; } = 0f;
     public float  FloorRoughness { get; init; } = 0.9f;
+
+    // Legacy single wall color, written by v2 files. When loading, per-wall fields take
+    // precedence; this is used as a fallback so old files still render correctly.
     public string WallColorHex  { get; init; } = "#C7CCCE";
     public float  WallMetallic   { get; init; } = 0f;
     public float  WallRoughness  { get; init; } = 0.85f;
+
+    // Per-wall colors written by v3+ files. Null means "fall back to WallColorHex".
+    public string? NorthWallColorHex { get; init; }
+    public string? SouthWallColorHex { get; init; }
+    public string? EastWallColorHex  { get; init; }
+    public string? WestWallColorHex  { get; init; }
 
     /// <summary>Version-1 doors, read for backward compatibility. Never written.</summary>
     public List<LegacyDoorDto>? Doors { get; init; }

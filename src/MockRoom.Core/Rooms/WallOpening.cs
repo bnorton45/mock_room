@@ -38,6 +38,9 @@ public sealed class WallOpening
     public Length SillHeight { get; set; }
     public HingeSide HingeSide { get; set; }
 
+    /// <summary>The paint color of this opening's leaves and frames (hex, e.g. "#D4C4B0").</summary>
+    public string ColorHex { get; set; } = "#D4C4B0";
+
     // Frame widths added around the opening on each side.
     // Doors use top/left/right only (FrameBottom stays zero — the floor is the threshold).
     // Closet doors have no frame. Windows use all four sides.
