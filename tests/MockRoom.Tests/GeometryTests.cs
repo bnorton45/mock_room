@@ -14,6 +14,40 @@ public class GeometryTests
     }
 
     [Fact]
+    public void SwingArc_ContainsOnlyTheQuarterDisc()
+    {
+        // Hinged at the origin, sweeping from +X (DirA) to +Y (DirB), radius 1.
+        var arc = new SwingArc(Vec2.Zero, 1.0, new Vec2(1, 0), new Vec2(0, 1));
+
+        Assert.True(arc.Contains(new Vec2(0.5, 0.5)));   // inside the wedge and radius
+        Assert.False(arc.Contains(new Vec2(0.8, 0.8)));  // within the wedge but past the radius
+        Assert.False(arc.Contains(new Vec2(-0.2, 0.5))); // behind DirA
+        Assert.False(arc.Contains(new Vec2(0.5, -0.2))); // behind DirB
+        Assert.Equal(Math.PI / 4, arc.Area.SquareMeters, 6);
+    }
+
+    [Fact]
+    public void SwingArc_Intersects_RectInTheSweptQuadrant()
+    {
+        var arc = new SwingArc(Vec2.Zero, 1.0, new Vec2(1, 0), new Vec2(0, 1));
+
+        Assert.True(arc.Intersects(new FootprintRect(new Vec2(0.4, 0.4), 0.4, 0.4)));   // sits in the sweep
+        Assert.False(arc.Intersects(new FootprintRect(new Vec2(-0.5, 0.5), 0.4, 0.4))); // behind the hinge
+        Assert.False(arc.Intersects(new FootprintRect(new Vec2(2.0, 2.0), 0.4, 0.4)));  // beyond the radius
+    }
+
+    [Fact]
+    public void SwingArc_BoundsEncloseTheSweep()
+    {
+        var arc = new SwingArc(new Vec2(3, 1), 0.9, new Vec2(1, 0), new Vec2(0, 1));
+        var (minX, minY, maxX, maxY) = arc.Bounds();
+
+        // Every point the arc contains must lie within its bounds.
+        Assert.True(minX <= 3 && minY <= 1 && maxX >= 3.9 && maxY >= 1.9);
+        Assert.True(arc.Contains(new Vec2(3.5, 1.4)));
+    }
+
+    [Fact]
     public void Footprint_Contains_AxisAligned()
     {
         var rect = new FootprintRect(new Vec2(5, 5), 2.0, 1.0);

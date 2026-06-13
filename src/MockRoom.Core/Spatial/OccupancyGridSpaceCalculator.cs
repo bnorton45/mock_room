@@ -5,10 +5,10 @@ namespace MockRoom.Core.Spatial;
 
 /// <summary>
 /// <see cref="ISpaceCalculator"/> that rasterizes every item footprint and door
-/// swing onto an <see cref="OccupancyGrid"/>, then reports used and free area.
-/// Overlapping footprints are counted once. Free area is taken as the room total
-/// minus used area (clamped at zero) so grid overhang past the room edge can't
-/// inflate the result.
+/// swing arc onto an <see cref="OccupancyGrid"/>, then reports used and free area.
+/// Overlapping regions are counted once. Free area is taken as the room total minus
+/// used area (clamped at zero) so grid overhang past the room edge can't inflate the
+/// result.
 /// </summary>
 public sealed class OccupancyGridSpaceCalculator(double cellSizeMeters = 0.05) : ISpaceCalculator
 {
@@ -16,7 +16,7 @@ public sealed class OccupancyGridSpaceCalculator(double cellSizeMeters = 0.05) :
 
     private readonly double _cellSize = cellSizeMeters;
 
-    /// <summary>When true, door swing clearance is counted as used floor.</summary>
+    /// <summary>When true, door and closet-door swing arcs are counted as used floor.</summary>
     public bool IncludeDoorSwing { get; init; } = true;
 
     public SpaceReport Compute(Room room)
@@ -29,8 +29,11 @@ public sealed class OccupancyGridSpaceCalculator(double cellSizeMeters = 0.05) :
 
         if (IncludeDoorSwing)
         {
-            foreach (var door in room.Doors)
-                grid.Mark(door.SwingFootprint(dims));
+            foreach (var opening in room.Openings)
+            {
+                foreach (var arc in opening.FloorRegions(dims))
+                    grid.Mark(arc);
+            }
         }
 
         var total = room.FloorArea;

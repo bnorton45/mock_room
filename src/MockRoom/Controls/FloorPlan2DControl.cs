@@ -33,6 +33,7 @@ public sealed class FloorPlan2DControl : Control
     private double _scale = 1;
     private double _offsetX;
     private double _offsetY;
+    private double _roomL;
     private bool _dragging;
     private Vec2 _grabOffset;
 
@@ -94,6 +95,7 @@ public sealed class FloorPlan2DControl : Control
         _scale = System.Math.Min(availW / roomW, availH / roomL);
         _offsetX = pad + (availW - roomW * _scale) / 2;
         _offsetY = pad + (availH - roomL * _scale) / 2;
+        _roomL = roomL; // cached so ToPx/ToWorld can flip Y (North at the top, globe convention)
 
         // Floor.
         var floor = new Rect(ToPx(new Vec2(0, 0)), ToPx(new Vec2(roomW, roomL)));
@@ -103,12 +105,39 @@ public sealed class FloorPlan2DControl : Control
 
         context.DrawRectangle(null, new Pen(Brushes.White, 2), floor);
 
-        DrawDoors(context, room);
+        DrawOpenings(context, room);
 
         foreach (var item in room.Items)
             DrawItem(context, item, ReferenceEquals(item, SelectedItem));
 
         DrawDimensionLabels(context, room, floor);
+        DrawCompass(context);
+    }
+
+    /// <summary>Draws a small fixed reference compass (North up) in the top-left corner.</summary>
+    private void DrawCompass(DrawingContext context)
+    {
+        const double r = 20;
+        var center = new Point(34, 34);
+        var ring = new Pen(new SolidColorBrush(Color.FromArgb(0xB0, 0xC9, 0xD1, 0xD9)), 1.5);
+        context.DrawEllipse(new SolidColorBrush(Color.FromArgb(0x66, 0x20, 0x28, 0x30)), ring, center, r, r);
+
+        // North needle: a red triangle pointing up.
+        var needle = new StreamGeometry();
+        using (var ctx = needle.Open())
+        {
+            ctx.BeginFigure(new Point(center.X, center.Y - r + 3), isFilled: true);
+            ctx.LineTo(new Point(center.X - 5, center.Y + 2));
+            ctx.LineTo(new Point(center.X + 5, center.Y + 2));
+            ctx.EndFigure(isClosed: true);
+        }
+        context.DrawGeometry(new SolidColorBrush(Color.FromRgb(0xE0, 0x6C, 0x6C)), null, needle);
+
+        var labels = new SolidColorBrush(Color.FromRgb(0xC9, 0xD1, 0xD9));
+        DrawCentered(context, "N", new Point(center.X, center.Y - r - 7), 11, labels);
+        DrawCentered(context, "S", new Point(center.X, center.Y + r + 7), 10, labels);
+        DrawCentered(context, "E", new Point(center.X + r + 7, center.Y), 10, labels);
+        DrawCentered(context, "W", new Point(center.X - r - 7, center.Y), 10, labels);
     }
 
     private void DrawFreeFloor(DrawingContext context, double roomW, double roomL)
@@ -150,23 +179,64 @@ public sealed class FloorPlan2DControl : Control
         DrawCentered(context, item.Name, ToPx(item.Position), 11, Brushes.White);
     }
 
-    private void DrawDoors(DrawingContext context, Room room)
+    private static readonly Color DoorColor = Color.FromRgb(0xE6, 0xB8, 0x4C);
+    private static readonly Color WindowColor = Color.FromRgb(0x5A, 0xB0, 0xFF);
+
+    private void DrawOpenings(DrawingContext context, Room room)
     {
-        var pen = new Pen(new SolidColorBrush(Color.FromRgb(0xE6, 0xB8, 0x4C)), 4);
-        foreach (var door in room.Doors)
+        var dims = room.Dimensions;
+        var doorPen = new Pen(new SolidColorBrush(DoorColor), 4);
+        var arcPen = new Pen(new SolidColorBrush(DoorColor, 0.7), 1.5);
+        var leafPen = new Pen(new SolidColorBrush(DoorColor), 5);
+        var windowPen = new Pen(new SolidColorBrush(WindowColor), 4);
+
+        foreach (var opening in room.Openings)
         {
-            var (a, b) = DoorEndpoints(door, room.Dimensions);
-            context.DrawLine(pen, ToPx(a), ToPx(b));
+            var (a, b) = OpeningEndpoints(opening, dims);
+            if (opening.Kind == OpeningKind.Window)
+            {
+                // A window: a band across the wall, no swing.
+                context.DrawLine(windowPen, ToPx(a), ToPx(b));
+                continue;
+            }
+
+            // A door or closet door: the wall gap, its swing arc(s), and the open leaf at 90°.
+            context.DrawLine(doorPen, ToPx(a), ToPx(b));
+            foreach (var arc in opening.FloorRegions(dims))
+            {
+                DrawSwingArc(context, arcPen, arc);
+                context.DrawLine(leafPen, ToPx(arc.Hinge), ToPx(arc.Hinge + arc.DirB * arc.Radius));
+            }
         }
     }
 
-    private static (Vec2 A, Vec2 B) DoorEndpoints(Door door, RoomDimensions dims)
+    /// <summary>Draws the quarter-circle a door leaf sweeps as a sampled polyline.</summary>
+    private void DrawSwingArc(DrawingContext context, Pen pen, Core.Geometry.SwingArc arc)
     {
-        var off = door.OffsetAlongWall.Meters;
-        var half = door.Width.Meters / 2;
+        const int segments = 12;
+        var geometry = new StreamGeometry();
+        using (var ctx = geometry.Open())
+        {
+            // Sweep from the closed leaf (DirA) toward the open leaf (DirB) at the radius.
+            ctx.BeginFigure(ToPx(arc.Hinge), isFilled: false);
+            for (var i = 0; i <= segments; i++)
+            {
+                var t = (double)i / segments * (Math.PI / 2);
+                var dir = arc.DirA * Math.Cos(t) + arc.DirB * Math.Sin(t);
+                ctx.LineTo(ToPx(arc.Hinge + dir * arc.Radius));
+            }
+            ctx.EndFigure(isClosed: true);
+        }
+        context.DrawGeometry(null, pen, geometry);
+    }
+
+    private static (Vec2 A, Vec2 B) OpeningEndpoints(WallOpening opening, RoomDimensions dims)
+    {
+        var off = opening.OffsetAlongWall.Meters;
+        var half = opening.OuterWidth.Meters / 2;
         var w = dims.Width.Meters;
         var l = dims.Length.Meters;
-        return door.Wall switch
+        return opening.Wall switch
         {
             WallSide.South => (new Vec2(off - half, 0), new Vec2(off + half, 0)),
             WallSide.North => (new Vec2(off - half, l), new Vec2(off + half, l)),
@@ -196,9 +266,10 @@ public sealed class FloorPlan2DControl : Control
         context.DrawText(ft, new Point(center.X - ft.Width / 2, center.Y - ft.Height / 2));
     }
 
-    private Point ToPx(Vec2 world) => new(_offsetX + world.X * _scale, _offsetY + world.Y * _scale);
+    // Y is flipped so North (the far y = length wall) draws at the top of the plan.
+    private Point ToPx(Vec2 world) => new(_offsetX + world.X * _scale, _offsetY + (_roomL - world.Y) * _scale);
 
-    private Vec2 ToWorld(Point px) => new((px.X - _offsetX) / _scale, (px.Y - _offsetY) / _scale);
+    private Vec2 ToWorld(Point px) => new((px.X - _offsetX) / _scale, _roomL - (px.Y - _offsetY) / _scale);
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {

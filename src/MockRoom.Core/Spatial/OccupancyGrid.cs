@@ -50,10 +50,14 @@ public sealed class OccupancyGrid
 
     public int FreeCellCount => CellCount - OccupiedCellCount;
 
-    /// <summary>Marks every cell whose center lies inside the footprint as occupied.</summary>
-    public void Mark(FootprintRect rect)
+    /// <summary>
+    /// Marks every cell whose center lies inside the region as occupied. Generic over
+    /// the region type so footprint rectangles and door swing arcs are both marked
+    /// without boxing the value type (keeps the path NativeAOT-clean).
+    /// </summary>
+    public void Mark<T>(T region) where T : IFloorRegion
     {
-        var (minX, minY, maxX, maxY) = rect.Bounds();
+        var (minX, minY, maxX, maxY) = region.Bounds();
 
         var colStart = Math.Max(0, (int)Math.Floor(minX / CellSize));
         var colEnd = Math.Min(Columns - 1, (int)Math.Ceiling(maxX / CellSize));
@@ -64,7 +68,7 @@ public sealed class OccupancyGrid
         {
             for (var col = colStart; col <= colEnd; col++)
             {
-                if (rect.Contains(CellCenter(col, row)))
+                if (region.Contains(CellCenter(col, row)))
                     _cells[Index(col, row)] = true;
             }
         }

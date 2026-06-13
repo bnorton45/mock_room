@@ -8,7 +8,7 @@ namespace MockRoom.Core.Geometry;
 /// yaw rotation in radians. Provides corner/AABB queries and a point-containment
 /// test used by the occupancy-grid space calculator.
 /// </summary>
-public readonly struct FootprintRect
+public readonly struct FootprintRect : IFloorRegion
 {
     public FootprintRect(Vec2 center, double width, double depth, double yawRadians = 0)
     {

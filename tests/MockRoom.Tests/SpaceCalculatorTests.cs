@@ -1,3 +1,4 @@
+using System;
 using MockRoom.Core.Geometry;
 using MockRoom.Core.Items;
 using MockRoom.Core.Rooms;
@@ -58,16 +59,46 @@ public class SpaceCalculatorTests
     }
 
     [Fact]
-    public void DoorSwing_ConsumesFloorWhenEnabled()
+    public void DoorSwing_ConsumesQuarterCircleWhenEnabled()
     {
         var room = new Room(RoomDimensions.FromMeters(6, 8, 2.5));
-        room.AddDoor(new Door(WallSide.South, Length.FromMeters(3), Length.FromMeters(0.9), Length.FromMeters(2.0)));
+        room.AddOpening(new WallOpening(OpeningKind.Door, WallSide.South,
+            Length.FromMeters(3), Length.FromMeters(0.9), Length.FromMeters(2.0)));
 
         var withSwing = new OccupancyGridSpaceCalculator { IncludeDoorSwing = true }.Compute(room);
         var withoutSwing = new OccupancyGridSpaceCalculator { IncludeDoorSwing = false }.Compute(room);
 
-        Assert.True(withSwing.Used.SquareMeters > 0.7);   // ~0.9 × 0.9 = 0.81 m²
+        // A 0.9 m leaf sweeps a quarter circle: π·0.9²/4 ≈ 0.636 m².
+        Assert.Equal(Math.PI * 0.9 * 0.9 / 4, withSwing.Used.SquareMeters, 1);
         Assert.Equal(0, withoutSwing.Used.SquareMeters, 6);
+    }
+
+    [Fact]
+    public void Window_ConsumesNoFloor()
+    {
+        var room = new Room(RoomDimensions.FromMeters(6, 8, 2.5));
+        room.AddOpening(new WallOpening(OpeningKind.Window, WallSide.South,
+            Length.FromMeters(3), Length.FromMeters(1.2), Length.FromMeters(1.2), Length.FromMeters(0.9)));
+
+        var report = new OccupancyGridSpaceCalculator().Compute(room);
+        Assert.Equal(0, report.Used.SquareMeters, 6);
+    }
+
+    [Fact]
+    public void ClosetDoor_ConsumesLessFloorThanASingleDoorOfSameWidth()
+    {
+        // Two W/2 leaves sweep 2·π·(W/2)²/4 = half the area of one W leaf's quarter circle.
+        var doorRoom = new Room(RoomDimensions.FromMeters(6, 8, 2.5));
+        doorRoom.AddOpening(new WallOpening(OpeningKind.Door, WallSide.South,
+            Length.FromMeters(3), Length.FromMeters(1.5), Length.FromMeters(2.0)));
+        var closetRoom = new Room(RoomDimensions.FromMeters(6, 8, 2.5));
+        closetRoom.AddOpening(new WallOpening(OpeningKind.ClosetDoor, WallSide.South,
+            Length.FromMeters(3), Length.FromMeters(1.5), Length.FromMeters(2.0)));
+
+        var door = new OccupancyGridSpaceCalculator().Compute(doorRoom);
+        var closet = new OccupancyGridSpaceCalculator().Compute(closetRoom);
+
+        Assert.True(closet.Used.SquareMeters < door.Used.SquareMeters);
     }
 
     [Fact]

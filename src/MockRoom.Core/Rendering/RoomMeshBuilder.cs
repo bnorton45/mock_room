@@ -23,6 +23,11 @@ public static class RoomMeshBuilder
     private static readonly (float R, float G, float B) FreeFloorColor = (0.18f, 0.40f, 0.66f);
     private static readonly (float R, float G, float B) WallColor = (0.78f, 0.80f, 0.83f);
     private static readonly (float R, float G, float B) FallbackItemColor = (0.60f, 0.64f, 0.68f);
+    private static readonly (float R, float G, float B) DoorLeafColor = (0.58f, 0.42f, 0.27f);
+    private static readonly (float R, float G, float B) FrameColor = (0.90f, 0.90f, 0.92f);
+
+    /// <summary>Thickness of an open door leaf and a window frame ring, in meters.</summary>
+    private const float LeafThickness = 0.04f;
 
     /// <summary>Lifts the free-floor overlay a hair above the floor to avoid z-fighting.</summary>
     private const float FreeFloorLift = 0.003f;
@@ -54,6 +59,7 @@ public static class RoomMeshBuilder
             AddFreeFloor(verts, freeFloor, w, l);
 
         AddWalls(verts, room, w, l, h);
+        AddDoorLeaves(verts, room);
 
         foreach (var item in room.Items)
             AddItem(verts, item, ReferenceEquals(item, selected));
@@ -81,56 +87,109 @@ public static class RoomMeshBuilder
     private static void AddWalls(List<float> verts, Room room, float w, float l, float h)
     {
         // Each wall is parameterized by distance `a` along the wall and height `y`,
-        // mapped into world space. Doors on the wall become openings along `a`.
+        // mapped into world space. Openings on the wall become voids along `a`, each
+        // with a sill below (windows) and a lintel above.
         AddWall(verts, (a, y) => new Vector3(a, y, 0), w, h, new Vector3(0, 0, 1), WallColor,
-            OpeningsOn(room, WallSide.South, w));
+            OpeningsOn(room, WallSide.South, w, h));
         AddWall(verts, (a, y) => new Vector3(a, y, l), w, h, new Vector3(0, 0, -1), WallColor,
-            OpeningsOn(room, WallSide.North, w));
+            OpeningsOn(room, WallSide.North, w, h));
         AddWall(verts, (a, y) => new Vector3(0, y, a), l, h, new Vector3(1, 0, 0), WallColor,
-            OpeningsOn(room, WallSide.West, l));
+            OpeningsOn(room, WallSide.West, l, h));
         AddWall(verts, (a, y) => new Vector3(w, y, a), l, h, new Vector3(-1, 0, 0), WallColor,
-            OpeningsOn(room, WallSide.East, l));
-    }
-
-    private static List<(float Start, float End, float Height)> OpeningsOn(Room room, WallSide side, float wallLength)
-    {
-        var openings = new List<(float, float, float)>();
-        foreach (var door in room.Doors)
-        {
-            if (door.Wall != side)
-                continue;
-            var half = (float)(door.Width.Meters / 2);
-            var center = (float)door.OffsetAlongWall.Meters;
-            var start = Math.Clamp(center - half, 0f, wallLength);
-            var end = Math.Clamp(center + half, 0f, wallLength);
-            if (end > start)
-                openings.Add((start, end, (float)door.Height.Meters));
-        }
-
-        openings.Sort((x, y) => x.Item1.CompareTo(y.Item1));
-        return openings;
+            OpeningsOn(room, WallSide.East, l, h));
     }
 
     /// <summary>
-    /// Emits a wall as full-height solid panels between openings plus a lintel panel
-    /// above each opening. <paramref name="map"/> turns (alongWall, height) into world space.
+    /// One opening reduced to wall coordinates: the outer hole (cut into the wall) plus
+    /// the inner pane rectangle (outer shrunk by the frame). For doors/closets the pane
+    /// equals the outer hole and <see cref="HasFrame"/> is false.
+    /// </summary>
+    private readonly record struct WallCut(
+        float Start, float End, float Sill, float Top,
+        float PaneStart, float PaneEnd, float PaneSill, float PaneTop, bool HasFrame);
+
+    private static List<WallCut> OpeningsOn(Room room, WallSide side, float wallLength, float wallHeight)
+    {
+        var cuts = new List<WallCut>();
+        foreach (var opening in room.Openings)
+        {
+            if (opening.Wall != side)
+                continue;
+            var half = (float)(opening.OuterWidth.Meters / 2);
+            var center = (float)opening.OffsetAlongWall.Meters;
+            var start = Math.Clamp(center - half, 0f, wallLength);
+            var end = Math.Clamp(center + half, 0f, wallLength);
+            var sill = Math.Clamp((float)opening.SillHeight.Meters, 0f, wallHeight);
+            var top = Math.Clamp((float)opening.Top.Meters, sill, wallHeight);
+            if (end <= start || top <= sill)
+                continue;
+
+            // Pane = outer hole shrunk by the frame widths, clamped within the hole.
+            var paneStart = Math.Clamp(start + (float)opening.FrameLeft.Meters, start, end);
+            var paneEnd = Math.Clamp(end - (float)opening.FrameRight.Meters, paneStart, end);
+            var paneSill = Math.Clamp(sill + (float)opening.FrameBottom.Meters, sill, top);
+            var paneTop = Math.Clamp(top - (float)opening.FrameTop.Meters, paneSill, top);
+            var hasFrame = paneStart > start || paneEnd < end || paneSill > sill || paneTop < top;
+
+            cuts.Add(new WallCut(start, end, sill, top, paneStart, paneEnd, paneSill, paneTop, hasFrame));
+        }
+
+        cuts.Sort((x, y) => x.Start.CompareTo(y.Start));
+        return cuts;
+    }
+
+    /// <summary>
+    /// Emits a wall as full-height solid panels between openings, a sill apron below each
+    /// opening and a lintel above it, and — for framed openings — a frame ring around the
+    /// (void) pane. <paramref name="map"/> turns (alongWall, height) into world space.
     /// </summary>
     private static void AddWall(List<float> verts, Func<float, float, Vector3> map, float wallLength, float wallHeight,
-        Vector3 normal, (float, float, float) color, List<(float Start, float End, float Height)> openings)
+        Vector3 normal, (float, float, float) color, List<WallCut> openings)
     {
         var cursor = 0f;
-        foreach (var (start, end, openHeight) in openings)
+        foreach (var cut in openings)
         {
-            if (start > cursor)
-                AddPanel(verts, map, cursor, start, 0, wallHeight, normal, color);
-            var top = Math.Clamp(openHeight, 0f, wallHeight);
-            if (top < wallHeight)
-                AddPanel(verts, map, start, end, top, wallHeight, normal, color); // lintel above the door
-            cursor = end;
+            if (cut.Start > cursor)
+                AddPanel(verts, map, cursor, cut.Start, 0, wallHeight, normal, color);
+            if (cut.Sill > 0)
+                AddPanel(verts, map, cut.Start, cut.End, 0, cut.Sill, normal, color); // apron below a window
+            if (cut.Top < wallHeight)
+                AddPanel(verts, map, cut.Start, cut.End, cut.Top, wallHeight, normal, color); // lintel above
+
+            if (cut.HasFrame)
+            {
+                // Frame ring around the void pane: left, right, bottom, top.
+                AddPanel(verts, map, cut.Start, cut.PaneStart, cut.Sill, cut.Top, normal, FrameColor);
+                AddPanel(verts, map, cut.PaneEnd, cut.End, cut.Sill, cut.Top, normal, FrameColor);
+                AddPanel(verts, map, cut.PaneStart, cut.PaneEnd, cut.Sill, cut.PaneSill, normal, FrameColor);
+                AddPanel(verts, map, cut.PaneStart, cut.PaneEnd, cut.PaneTop, cut.Top, normal, FrameColor);
+            }
+
+            cursor = cut.End;
         }
 
         if (cursor < wallLength)
             AddPanel(verts, map, cursor, wallLength, 0, wallHeight, normal, color);
+    }
+
+    /// <summary>Adds a thin open-leaf cuboid for each door/closet swing arc, at 90°.</summary>
+    private static void AddDoorLeaves(List<float> verts, Room room)
+    {
+        var dims = room.Dimensions;
+        foreach (var opening in room.Openings)
+        {
+            if (!opening.Swings)
+                continue;
+            var leafHeight = (float)opening.Height.Meters;
+            foreach (var arc in opening.FloorRegions(dims))
+            {
+                // The fully-open leaf lies along DirB (into the room), length = the leaf radius.
+                var center = arc.Hinge + arc.DirB * (arc.Radius / 2);
+                var yaw = Math.Atan2(arc.DirB.Y, arc.DirB.X);
+                var footprint = new FootprintRect(center, arc.Radius, LeafThickness, yaw);
+                AddCuboid(verts, footprint, leafHeight, DoorLeafColor);
+            }
+        }
     }
 
     private static void AddPanel(List<float> verts, Func<float, float, Vector3> map,
@@ -139,11 +198,16 @@ public static class RoomMeshBuilder
 
     private static void AddItem(List<float> verts, RoomItem item, bool selected)
     {
-        var (p0, p1, p2, p3) = item.Footprint.Corners();
-        var h = (float)item.Height.Meters;
         var color = ParseColor(item.ColorHex);
         if (selected)
             color = Lerp(color, (1f, 1f, 1f), SelectedHighlight);
+        AddCuboid(verts, item.Footprint, (float)item.Height.Meters, color);
+    }
+
+    /// <summary>Extrudes a floor footprint into a colored cuboid of the given height.</summary>
+    private static void AddCuboid(List<float> verts, FootprintRect footprint, float h, (float, float, float) color)
+    {
+        var (p0, p1, p2, p3) = footprint.Corners();
 
         Vector3 Floor(Vec2 p) => new((float)p.X, 0, (float)p.Y);
         Vector3 Top(Vec2 p) => new((float)p.X, h, (float)p.Y);
