@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using MockRoom.ViewModels;
 
@@ -14,6 +15,8 @@ public partial class MainWindow : Window
     };
 
     private readonly RoomEditorViewModel _viewModel;
+    // Guard against the ColorPicker ↔ ViewModel feedback loop.
+    private bool _syncingColor;
 
     public MainWindow()
     {
@@ -22,6 +25,23 @@ public partial class MainWindow : Window
         DataContext = _viewModel;
 
         Plan.ItemDragged += (item, position) => _viewModel.DragItemTo(item, position);
+
+        // ColorPicker → ViewModel: push user's choice to the paint target.
+        ColorPicker.ColorChanged += (_, e) =>
+        {
+            if (_syncingColor) return;
+            _syncingColor = true;
+            _viewModel.SelectedColor = e.NewColor;
+            _syncingColor = false;
+        };
+
+        // ViewModel → ColorPicker: when the selection changes, seed the picker with
+        // the target's existing color so the ring starts at the right position.
+        _viewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(RoomEditorViewModel.SelectedColor) && !_syncingColor)
+                ColorPicker.Color = _viewModel.SelectedColor;
+        };
 
         OpenButton.Click += OnOpenClick;
         SaveButton.Click += OnSaveClick;

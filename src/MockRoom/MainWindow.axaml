@@ -207,13 +207,13 @@
                                 CornerRadius="4" Padding="0" HorizontalAlignment="Left"
                                 ToolTip.Tip="Click to open / close the color wheel" />
 
-                        <!-- Color wheel — appears when IsColorPickerOpen.
-                             SelectedIndex=1 → Spectrum tab (ring).
-                             IsColorPaletteVisible=False removes the Palette tab so
-                             the ring is the landing view. -->
+                        <!-- Color wheel — wired in code-behind via ColorChanged event
+                             so it is not subject to compiled-binding TwoWay issues.
+                             IsColorPaletteVisible=False + SelectedIndex=0 lands on
+                             the Spectrum (ring) tab immediately. -->
                         <Border IsVisible="{Binding IsColorPickerOpen}"
                                 Background="#202830" CornerRadius="6" Padding="8">
-                            <ColorView Color="{Binding SelectedColor, Mode=TwoWay}"
+                            <ColorView x:Name="ColorPicker"
                                        ColorSpectrumShape="Ring"
                                        IsAlphaEnabled="False"
                                        IsAlphaVisible="False"
