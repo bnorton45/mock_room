@@ -9,10 +9,10 @@ namespace MockRoom.Core.Rendering;
 /// (X = width, Y = up, Z = length); floor coordinates <c>(x, y)</c> map to world
 /// <c>(x, _, y)</c>.
 ///
-/// In <see cref="CameraMode.FirstPerson"/> the eye is locked to the room center
-/// and only rotates (<see cref="Yaw"/>/<see cref="Pitch"/>) and rises/falls
-/// (<see cref="EyeHeight"/>). In <see cref="CameraMode.Orbit"/> the eye circles
-/// the room center at <see cref="OrbitDistance"/>.
+/// In <see cref="CameraMode.FirstPerson"/> the eye is at (<see cref="FirstPersonX"/>,
+/// <see cref="EyeHeight"/>, <see cref="FirstPersonZ"/>) and only rotates
+/// (<see cref="Yaw"/>/<see cref="Pitch"/>). In <see cref="CameraMode.Orbit"/> the eye
+/// circles the room center at <see cref="OrbitDistance"/>.
 /// </summary>
 public sealed class Camera
 {
@@ -27,12 +27,18 @@ public sealed class Camera
     private const float DefaultFov = MathF.PI / 3f; // 60°
     private const float NearPlane = 0.05f;
     private const float FarPlane = 200f;
+    private const float ViewpointInset = 0.15f; // meters inside from wall/corner
 
     private float _pitch;
     private float _orbitPitch = 0.5f;
     private float _orbitDistance = 8f;
 
-    public Camera(RoomDimensions dimensions) => SetRoom(dimensions);
+    public Camera(RoomDimensions dimensions)
+    {
+        SetRoom(dimensions);
+        FirstPersonX = RoomWidth / 2f;
+        FirstPersonZ = RoomLength / 2f;
+    }
 
     /// <summary>Builds a camera framing the given room with a sensible default orbit distance.</summary>
     public static Camera FromRoom(RoomDimensions dimensions)
@@ -47,6 +53,12 @@ public sealed class Camera
     public float RoomWidth { get; private set; }
     public float RoomLength { get; private set; }
     public float RoomHeight { get; private set; }
+
+    /// <summary>First-person floor X position in world space. Defaults to room center.</summary>
+    public float FirstPersonX { get; set; }
+
+    /// <summary>First-person floor Z position in world space. Defaults to room center.</summary>
+    public float FirstPersonZ { get; set; }
 
     /// <summary>First-person heading, in radians. 0 looks along +Z (down the room length).</summary>
     public float Yaw { get; set; }
@@ -93,7 +105,7 @@ public sealed class Camera
 
     /// <summary>The camera position in world space for the current mode.</summary>
     public Vector3 EyePosition => Mode == CameraMode.FirstPerson
-        ? new Vector3(RoomWidth / 2f, EffectiveEyeHeight, RoomLength / 2f)
+        ? new Vector3(FirstPersonX, EffectiveEyeHeight, FirstPersonZ)
         : OrbitTarget + OrbitOffset();
 
     private Vector3 OrbitOffset()
@@ -129,6 +141,21 @@ public sealed class Camera
     public Matrix4x4 ViewProjection(float aspect) => View * Projection(aspect);
 
     /// <summary>
+    /// Projects a world-space point into NDC (Normalized Device Coordinates, [-1, 1]).
+    /// Returns null when the point is behind the near plane (clip W ≤ 0), which means
+    /// it should not be drawn.
+    /// </summary>
+    public Vector2? WorldToNdc(Vector3 world, float aspect)
+    {
+        var vp = ViewProjection(aspect);
+        // Row-vector convention: clip = world4 · vp (matches ViewProjection's layout).
+        var clip = Vector4.Transform(new Vector4(world, 1f), vp);
+        if (clip.W <= 0f)
+            return null;
+        return new Vector2(clip.X / clip.W, clip.Y / clip.W);
+    }
+
+    /// <summary>
     /// Builds the world-space picking ray through a pixel in a viewport of the given
     /// size. Unprojects the pixel's near and far clip-space points through the inverse
     /// view·projection and connects them. <paramref name="pixelX"/>/<paramref name="pixelY"/>
@@ -162,5 +189,73 @@ public sealed class Camera
         // Row-vector transform (clip · inv = world), matching ViewProjection's convention.
         var world = Vector4.Transform(new Vector4(ndcX, ndcY, ndcZ, 1f), invViewProjection);
         return new Vector3(world.X, world.Y, world.Z) / world.W;
+    }
+
+    // --- viewpoint generation -----------------------------------------------
+
+    /// <summary>
+    /// Builds a first-person viewpoint list for a rectangular room.
+    /// Returns 2N + 1 viewpoints for an N-sided polygon: one room-centre viewpoint,
+    /// then for each edge a corner viewpoint followed by a wall-centre viewpoint,
+    /// all inset <c>0.15 m</c> inside from the surface and aimed toward the room centre.
+    /// </summary>
+    public static IReadOnlyList<CameraViewpoint> BuildViewpoints(float roomWidth, float roomLength)
+    {
+        Vector2[] vertices =
+        [
+            new(0f, 0f),
+            new(roomWidth, 0f),
+            new(roomWidth, roomLength),
+            new(0f, roomLength),
+        ];
+        return BuildViewpoints(vertices);
+    }
+
+    /// <summary>
+    /// Builds a first-person viewpoint list for an arbitrary floor polygon defined by
+    /// <paramref name="vertices"/> in (world X, world Z) order.
+    /// </summary>
+    public static IReadOnlyList<CameraViewpoint> BuildViewpoints(Vector2[] vertices)
+    {
+        if (vertices.Length < 2)
+            return [new CameraViewpoint("Center", 0f, 0f, 0f)];
+
+        var center = Vector2.Zero;
+        foreach (var v in vertices) center += v;
+        center /= vertices.Length;
+
+        var list = new List<CameraViewpoint>(2 * vertices.Length + 1)
+        {
+            new("Center", center.X, center.Y, 0f)
+        };
+
+        for (var i = 0; i < vertices.Length; i++)
+        {
+            var a = vertices[i];
+            var b = vertices[(i + 1) % vertices.Length];
+            var mid = (a + b) * 0.5f;
+
+            var cornerPos = InsetToward(a, center);
+            var wallPos = InsetToward(mid, center);
+
+            list.Add(new CameraViewpoint($"Corner {i + 1}", cornerPos.X, cornerPos.Y, YawToward(cornerPos, center)));
+            list.Add(new CameraViewpoint($"Wall {i + 1}", wallPos.X, wallPos.Y, YawToward(wallPos, center)));
+        }
+
+        return list;
+    }
+
+    private static Vector2 InsetToward(Vector2 point, Vector2 toward)
+    {
+        var dir = toward - point;
+        var len = dir.Length();
+        return len > ViewpointInset ? point + dir / len * ViewpointInset : toward;
+    }
+
+    private static float YawToward(Vector2 from, Vector2 to)
+    {
+        var dx = to.X - from.X;
+        var dz = to.Y - from.Y;
+        return MathF.Atan2(dx, dz);
     }
 }

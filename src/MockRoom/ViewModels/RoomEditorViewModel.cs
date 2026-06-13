@@ -71,6 +71,14 @@ public sealed class RoomEditorViewModel : ViewModelBase
     private double _eyeHeightMaxMeters = 2.5;
     private SpaceReport? _lastReport;
 
+    private IReadOnlyList<Core.Rendering.CameraViewpoint> _viewpoints = [];
+    private int _viewpointIndex;
+    private string _viewpointLabel = "Center";
+    private double _viewpointX;
+    private double _viewpointZ;
+    private double _viewpointYaw;
+    private int _viewpointVersion;
+
     public RoomEditorViewModel()
         : this(new OccupancyGridSpaceCalculator(), UnitFormatter.Instance)
     {
@@ -98,9 +106,12 @@ public sealed class RoomEditorViewModel : ViewModelBase
         AddWindowCommand = new RelayCommand(_ => AddOpening(OpeningKind.Window));
         RemoveOpeningCommand = new RelayCommand(_ => RemoveSelectedOpening(), _ => SelectedOpening is not null);
         ApplyOpeningCommand = new RelayCommand(_ => ApplyOpening(), _ => SelectedOpening is not null);
+        NextViewpointCommand = new RelayCommand(_ => NavigateViewpoint(+1));
+        PrevViewpointCommand = new RelayCommand(_ => NavigateViewpoint(-1));
 
         _eyeHeightMaxMeters = Room.Dimensions.Height.Meters;
         RefreshDimensionTexts();
+        RebuildViewpoints();
         Recompute();
     }
 
@@ -123,6 +134,8 @@ public sealed class RoomEditorViewModel : ViewModelBase
     public RelayCommand AddWindowCommand { get; }
     public RelayCommand RemoveOpeningCommand { get; }
     public RelayCommand ApplyOpeningCommand { get; }
+    public RelayCommand NextViewpointCommand { get; }
+    public RelayCommand PrevViewpointCommand { get; }
 
     /// <summary>Wall openings (doors, closet doors, windows) shown in the openings list.</summary>
     public ObservableCollection<WallOpening> Openings { get; } = [];
@@ -183,6 +196,21 @@ public sealed class RoomEditorViewModel : ViewModelBase
         get => _eyeHeightMaxMeters;
         private set => SetField(ref _eyeHeightMaxMeters, value);
     }
+
+    /// <summary>Display label for the active viewpoint, e.g. "Wall 2 (4/9)".</summary>
+    public string ViewpointLabel { get => _viewpointLabel; private set => SetField(ref _viewpointLabel, value); }
+
+    /// <summary>World-space X of the active first-person viewpoint.</summary>
+    public double ViewpointX { get => _viewpointX; private set => SetField(ref _viewpointX, value); }
+
+    /// <summary>World-space Z of the active first-person viewpoint.</summary>
+    public double ViewpointZ { get => _viewpointZ; private set => SetField(ref _viewpointZ, value); }
+
+    /// <summary>Initial yaw (radians) for the active viewpoint.</summary>
+    public double ViewpointYaw { get => _viewpointYaw; private set => SetField(ref _viewpointYaw, value); }
+
+    /// <summary>Incremented whenever the active viewpoint changes; the 3D control resets its camera position.</summary>
+    public int ViewpointVersion { get => _viewpointVersion; private set => SetField(ref _viewpointVersion, value); }
 
     public bool IsMetric => _unitSystem == UnitSystem.Metric;
     public bool IsImperial => _unitSystem == UnitSystem.Imperial;
@@ -270,8 +298,14 @@ public sealed class RoomEditorViewModel : ViewModelBase
 
     public bool HasOpeningSelection => _selectedOpening is not null;
 
-    /// <summary>True when the selected opening is a window (only then is the sill editable).</summary>
+    /// <summary>True when the selected opening is a window (only then is the sill and bottom frame editable).</summary>
     public bool OpeningIsWindow => _selectedOpening?.Kind == OpeningKind.Window;
+
+    /// <summary>True when the selected opening carries a frame (doors and windows, not closet doors).</summary>
+    public bool OpeningHasFrame => _selectedOpening?.Kind is OpeningKind.Door or OpeningKind.Window;
+
+    /// <summary>True when the selected opening has a hinge side to configure (doors and closet doors, not windows).</summary>
+    public bool OpeningHasHinge => _selectedOpening?.Kind is OpeningKind.Door or OpeningKind.ClosetDoor;
 
     public WallSide OpeningWall { get => _openingWall; set => SetField(ref _openingWall, value); }
     public HingeSide OpeningHinge { get => _openingHinge; set => SetField(ref _openingHinge, value); }
@@ -393,6 +427,7 @@ public sealed class RoomEditorViewModel : ViewModelBase
             EyeHeightMeters = EyeHeightMaxMeters;
 
         RefreshDimensionTexts();
+        RebuildViewpoints();
         Recompute();
     }
 
@@ -476,6 +511,7 @@ public sealed class RoomEditorViewModel : ViewModelBase
             ClampOpeningToRoom(opening);
         if (SelectedOpening is not null)
             RefreshOpeningTexts();
+        RebuildViewpoints();
         Recompute();
     }
 
@@ -533,8 +569,9 @@ public sealed class RoomEditorViewModel : ViewModelBase
             OpeningKind.Window => (DefaultWindowWidthMeters, DefaultWindowHeightMeters, DefaultWindowSillMeters),
             _ => (DefaultDoorWidthMeters, DefaultDoorHeightMeters, 0.0),
         };
-        // Windows get a default frame on each side; keep the whole opening within the wall.
-        var frame = kind == OpeningKind.Window ? DefaultWindowFrameMeters : 0.0;
+        // Doors and windows get a default frame; closet doors do not.
+        // Doors have no bottom frame (the floor acts as the threshold).
+        var frame = kind is OpeningKind.Window or OpeningKind.Door ? DefaultWindowFrameMeters : 0.0;
         width = Math.Min(width, Math.Max(0.1, wallLength - 2 * frame));
 
         var opening = new WallOpening(kind, wall,
@@ -544,16 +581,79 @@ public sealed class RoomEditorViewModel : ViewModelBase
             Length.FromMeters(sill))
         {
             FrameTop = Length.FromMeters(frame),
-            FrameBottom = Length.FromMeters(frame),
+            FrameBottom = Length.FromMeters(kind == OpeningKind.Window ? frame : 0.0),
             FrameLeft = Length.FromMeters(frame),
             FrameRight = Length.FromMeters(frame),
         };
         ClampOpeningToRoom(opening);
 
+        if (!PlaceOpeningOnWall(opening, wallLength))
+        {
+            OpeningError = $"No room on the {wall} wall for another opening.";
+            return;
+        }
+
+        OpeningError = null;
         Room.AddOpening(opening);
         Openings.Add(opening);
         SelectedOpening = opening;
         Recompute();
+    }
+
+    /// <summary>
+    /// Finds the gap on the opening's wall that is closest to the wall centre and wide
+    /// enough to fit the opening, then positions the opening there.  Returns false if no
+    /// gap exists (caller should report the error and not add the opening).
+    /// </summary>
+    private bool PlaceOpeningOnWall(WallOpening candidate, double wallLength)
+    {
+        var outerWidth = candidate.OuterWidth.Meters;
+        if (outerWidth > wallLength)
+            return false;
+
+        // Collect occupied ranges on the same wall sorted by left edge.
+        var occupied = new List<(double Left, double Right)>();
+        foreach (var o in Room.Openings)
+        {
+            if (o.Wall != candidate.Wall) continue;
+            occupied.Add((
+                o.OffsetAlongWall.Meters - o.OuterWidth.Meters / 2,
+                o.OffsetAlongWall.Meters + o.OuterWidth.Meters / 2));
+        }
+        occupied.Sort((a, b) => a.Left.CompareTo(b.Left));
+
+        // Walk the occupied spans and collect every gap wide enough for outerWidth.
+        var wallCenter = wallLength / 2;
+        var bestGapLeft = double.NaN;
+        var bestGapRight = double.NaN;
+        var bestDist = double.MaxValue;
+
+        var cursor = 0.0;
+        foreach (var (oLeft, oRight) in occupied)
+        {
+            var gapRight = oLeft;
+            if (gapRight - cursor >= outerWidth)
+            {
+                var dist = Math.Abs((cursor + gapRight) / 2 - wallCenter);
+                if (dist < bestDist) { bestDist = dist; bestGapLeft = cursor; bestGapRight = gapRight; }
+            }
+            cursor = Math.Max(cursor, oRight);
+        }
+        // Trailing gap after the last existing opening.
+        if (wallLength - cursor >= outerWidth)
+        {
+            var dist = Math.Abs((cursor + wallLength) / 2 - wallCenter);
+            if (dist < bestDist) { bestGapLeft = cursor; bestGapRight = wallLength; }
+        }
+
+        if (double.IsNaN(bestGapLeft))
+            return false;
+
+        // Centre the opening inside the chosen gap, clamped to stay within it.
+        var gapMid = (bestGapLeft + bestGapRight) / 2;
+        var offset = Math.Clamp(gapMid, bestGapLeft + outerWidth / 2, bestGapRight - outerWidth / 2);
+        candidate.OffsetAlongWall = Length.FromMeters(offset);
+        return true;
     }
 
     private void RemoveSelectedOpening()
@@ -580,7 +680,9 @@ public sealed class RoomEditorViewModel : ViewModelBase
             return;
         }
 
-        // Windows can sit above a sill and carry a frame; doors/closets start at the floor with no frame.
+        // Windows sit above a sill and frame all four sides.
+        // Doors frame top, left, and right only (floor is the threshold — no bottom frame).
+        // Closet doors have no frame.
         var sill = Length.Zero;
         var frameTop = Length.Zero;
         var frameBottom = Length.Zero;
@@ -602,6 +704,16 @@ public sealed class RoomEditorViewModel : ViewModelBase
                 return;
             }
         }
+        else if (opening.Kind == OpeningKind.Door)
+        {
+            if (!UnitConverter.TryParse(FrameTopText, _unitSystem, out frameTop) ||
+                !UnitConverter.TryParse(FrameLeftText, _unitSystem, out frameLeft) ||
+                !UnitConverter.TryParse(FrameRightText, _unitSystem, out frameRight))
+            {
+                OpeningError = "Enter valid frame widths.";
+                return;
+            }
+        }
 
         if (width.Meters <= 0 || height.Meters <= 0 || offset.Meters < 0 || sill.Meters < 0 ||
             frameTop.Meters < 0 || frameBottom.Meters < 0 || frameLeft.Meters < 0 || frameRight.Meters < 0)
@@ -613,10 +725,11 @@ public sealed class RoomEditorViewModel : ViewModelBase
         var outerWidth = width.Meters + frameLeft.Meters + frameRight.Meters;
         var outerHeight = height.Meters + frameTop.Meters + frameBottom.Meters;
 
+        // offset is the start-edge position (distance from wall start to the opening's near edge).
         var wallLength = WallLengthFor(OpeningWall);
         if (outerWidth > wallLength ||
-            offset.Meters - outerWidth / 2 < 0 ||
-            offset.Meters + outerWidth / 2 > wallLength)
+            offset.Meters < 0 ||
+            offset.Meters + outerWidth > wallLength)
         {
             OpeningError = "The opening does not fit within the wall.";
             return;
@@ -628,10 +741,27 @@ public sealed class RoomEditorViewModel : ViewModelBase
             return;
         }
 
+        // Block placement that overlaps another opening on the same wall.
+        var newLeft = offset.Meters;
+        var newRight = offset.Meters + outerWidth;
+        foreach (var other in Room.Openings)
+        {
+            if (ReferenceEquals(other, opening)) continue;
+            if (other.Wall != OpeningWall) continue;
+            var otherLeft = other.OffsetAlongWall.Meters - other.OuterWidth.Meters / 2;
+            var otherRight = other.OffsetAlongWall.Meters + other.OuterWidth.Meters / 2;
+            if (newLeft < otherRight && newRight > otherLeft)
+            {
+                OpeningError = "The opening overlaps another opening on this wall.";
+                return;
+            }
+        }
+
         OpeningError = null;
         opening.Wall = OpeningWall;
         opening.HingeSide = OpeningHinge;
-        opening.OffsetAlongWall = offset;
+        // Convert back from start-edge to center-based offset stored in the domain model.
+        opening.OffsetAlongWall = Length.FromMeters(offset.Meters + outerWidth / 2);
         opening.Width = width;
         opening.Height = height;
         opening.SillHeight = sill;
@@ -646,6 +776,8 @@ public sealed class RoomEditorViewModel : ViewModelBase
     {
         var opening = SelectedOpening;
         OnPropertyChanged(nameof(OpeningIsWindow));
+        OnPropertyChanged(nameof(OpeningHasFrame));
+        OnPropertyChanged(nameof(OpeningHasHinge));
         if (opening is null)
         {
             OpeningOffsetText = OpeningWidthText = OpeningHeightText = OpeningSillText = "";
@@ -656,7 +788,8 @@ public sealed class RoomEditorViewModel : ViewModelBase
 
         OpeningWall = opening.Wall;
         OpeningHinge = opening.HingeSide;
-        OpeningOffsetText = FormatPlain(opening.OffsetAlongWall);
+        // Display the start-edge offset (center − half outer width) so the user can type 0 to push the opening flush against the wall corner.
+        OpeningOffsetText = FormatPlain(Length.FromMeters(opening.OffsetAlongWall.Meters - opening.OuterWidth.Meters / 2));
         OpeningWidthText = FormatPlain(opening.Width);
         OpeningHeightText = FormatPlain(opening.Height);
         OpeningSillText = FormatPlain(opening.SillHeight);
@@ -712,6 +845,33 @@ public sealed class RoomEditorViewModel : ViewModelBase
     private string FormatPlain(Length length) => _unitSystem == UnitSystem.Imperial
         ? string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0:0.##}", length.Feet)
         : string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0:0.##}", length.Meters);
+
+    private void RebuildViewpoints()
+    {
+        _viewpoints = Core.Rendering.Camera.BuildViewpoints(
+            (float)Room.Dimensions.Width.Meters,
+            (float)Room.Dimensions.Length.Meters);
+        _viewpointIndex = 0;
+        ApplyViewpoint();
+    }
+
+    private void NavigateViewpoint(int delta)
+    {
+        if (_viewpoints.Count == 0) return;
+        _viewpointIndex = (_viewpointIndex + delta + _viewpoints.Count) % _viewpoints.Count;
+        ApplyViewpoint();
+    }
+
+    private void ApplyViewpoint()
+    {
+        if (_viewpoints.Count == 0) return;
+        var vp = _viewpoints[_viewpointIndex];
+        ViewpointX = vp.X;
+        ViewpointZ = vp.Z;
+        ViewpointYaw = vp.Yaw;
+        ViewpointLabel = $"{vp.Name} ({_viewpointIndex + 1}/{_viewpoints.Count})";
+        ViewpointVersion++;
+    }
 
     private void Recompute()
     {
