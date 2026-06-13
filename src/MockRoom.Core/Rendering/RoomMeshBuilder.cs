@@ -29,6 +29,12 @@ public static class RoomMeshBuilder
     /// <summary>Thickness of an open door leaf and a window frame ring, in meters.</summary>
     private const float LeafThickness = 0.04f;
 
+    /// <summary>Width of the thin glazing bars within each half-pane, in meters.</summary>
+    private const float GlazingBarThickness = 0.035f;
+
+    /// <summary>Width of the thicker mid-rail that separates the top and bottom halves, in meters.</summary>
+    private const float GlazingMidRailThickness = 0.07f;
+
     /// <summary>Lifts the free-floor overlay a hair above the floor to avoid z-fighting.</summary>
     private const float FreeFloorLift = 0.003f;
 
@@ -103,10 +109,11 @@ public static class RoomMeshBuilder
     /// One opening reduced to wall coordinates: the outer hole (cut into the wall) plus
     /// the inner pane rectangle (outer shrunk by the frame). For doors/closets the pane
     /// equals the outer hole and <see cref="HasFrame"/> is false.
+    /// Windows additionally set <see cref="HasGlazing"/> to draw the internal bar grid.
     /// </summary>
     private readonly record struct WallCut(
         float Start, float End, float Sill, float Top,
-        float PaneStart, float PaneEnd, float PaneSill, float PaneTop, bool HasFrame);
+        float PaneStart, float PaneEnd, float PaneSill, float PaneTop, bool HasFrame, bool HasGlazing);
 
     private static List<WallCut> OpeningsOn(Room room, WallSide side, float wallLength, float wallHeight)
     {
@@ -130,8 +137,9 @@ public static class RoomMeshBuilder
             var paneSill = Math.Clamp(sill + (float)opening.FrameBottom.Meters, sill, top);
             var paneTop = Math.Clamp(top - (float)opening.FrameTop.Meters, paneSill, top);
             var hasFrame = paneStart > start || paneEnd < end || paneSill > sill || paneTop < top;
+            var hasGlazing = opening.Kind == OpeningKind.Window;
 
-            cuts.Add(new WallCut(start, end, sill, top, paneStart, paneEnd, paneSill, paneTop, hasFrame));
+            cuts.Add(new WallCut(start, end, sill, top, paneStart, paneEnd, paneSill, paneTop, hasFrame, hasGlazing));
         }
 
         cuts.Sort((x, y) => x.Start.CompareTo(y.Start));
@@ -165,6 +173,9 @@ public static class RoomMeshBuilder
                 AddPanel(verts, map, cut.PaneStart, cut.PaneEnd, cut.PaneTop, cut.Top, normal, FrameColor);
             }
 
+            if (cut.HasGlazing)
+                AddGlazingBars(verts, map, normal, cut.PaneStart, cut.PaneEnd, cut.PaneSill, cut.PaneTop);
+
             cursor = cut.End;
         }
 
@@ -190,6 +201,35 @@ public static class RoomMeshBuilder
                 AddCuboid(verts, footprint, leafHeight, DoorLeafColor);
             }
         }
+    }
+
+    /// <summary>
+    /// Draws the internal glazing bar grid for a window pane: one horizontal bar at
+    /// mid-height (separating top and bottom halves), one horizontal bar centred in
+    /// each half (giving 4 panes per half), and one vertical bar along the centre
+    /// axis — split into 4 segments at the horizontal bar intersections to avoid
+    /// z-fighting between coplanar quads.
+    /// </summary>
+    private static void AddGlazingBars(List<float> verts, Func<float, float, Vector3> map, Vector3 normal,
+        float paneStart, float paneEnd, float paneSill, float paneTop)
+    {
+        var halfT    = GlazingBarThickness / 2f;
+        var halfMidT = GlazingMidRailThickness / 2f;
+        var midX = (paneStart + paneEnd) * 0.5f;
+        var midY = (paneSill + paneTop) * 0.5f;
+        var quarterY = (paneSill + midY) * 0.5f;
+        var threeQuarterY = (midY + paneTop) * 0.5f;
+
+        // Three full-width horizontal bars: thick mid-rail between the halves, thin bars within each half.
+        AddPanel(verts, map, paneStart, paneEnd, midY - halfMidT,       midY + halfMidT,       normal, FrameColor);
+        AddPanel(verts, map, paneStart, paneEnd, quarterY - halfT,      quarterY + halfT,      normal, FrameColor);
+        AddPanel(verts, map, paneStart, paneEnd, threeQuarterY - halfT, threeQuarterY + halfT, normal, FrameColor);
+
+        // Vertical centre bar in four gap-filling segments (avoids z-fighting at crossings).
+        AddPanel(verts, map, midX - halfT, midX + halfT, paneSill,              quarterY - halfT,      normal, FrameColor);
+        AddPanel(verts, map, midX - halfT, midX + halfT, quarterY + halfT,      midY - halfMidT,       normal, FrameColor);
+        AddPanel(verts, map, midX - halfT, midX + halfT, midY + halfMidT,       threeQuarterY - halfT, normal, FrameColor);
+        AddPanel(verts, map, midX - halfT, midX + halfT, threeQuarterY + halfT, paneTop,               normal, FrameColor);
     }
 
     private static void AddPanel(List<float> verts, Func<float, float, Vector3> map,

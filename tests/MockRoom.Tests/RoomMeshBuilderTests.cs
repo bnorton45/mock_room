@@ -71,9 +71,13 @@ public class RoomMeshBuilderTests
 
         var mesh = RoomMeshBuilder.Build(room);
 
-        // Floor + 3 plain walls + windowed wall (left + right + apron + lintel + 4-quad frame ring = 8 quads).
-        var windowedWallVerts = 8 * 6;
-        Assert.Equal(FloorVerts + 3 * WallVerts + windowedWallVerts, mesh.VertexCount); // 72
+        // Floor + 3 plain walls + windowed wall:
+        //   left, right, apron, lintel = 4 quads
+        //   4-quad frame ring = 4 quads
+        //   glazing bars = 7 quads (3 horizontal + 4 vertical segments)
+        //   total = 15 quads
+        var windowedWallVerts = 15 * 6;
+        Assert.Equal(FloorVerts + 3 * WallVerts + windowedWallVerts, mesh.VertexCount); // 114
     }
 
     [Fact]
