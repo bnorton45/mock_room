@@ -200,31 +200,27 @@
                         <TextBlock Text="PAINT" FontSize="11" Foreground="#7A828C" />
                         <TextBlock Text="{Binding SelectedTargetLabel}" Foreground="#C9D1D9" FontSize="12" />
 
-                        <!-- Color swatch button: shows current color, click to toggle wheel -->
+                        <!-- Color swatch: shows current color, click to toggle the wheel -->
                         <Button Command="{Binding ToggleColorPickerCommand}"
-                                Padding="0" CornerRadius="4" HorizontalAlignment="Left"
-                                ToolTip.Tip="Click to open color wheel">
-                            <Border Width="80" Height="32" CornerRadius="4"
-                                    BorderThickness="1" BorderBrush="#444C56">
-                                <Border.Background>
-                                    <SolidColorBrush Color="{Binding SelectedColor}" />
-                                </Border.Background>
-                            </Border>
-                        </Button>
+                                Background="{Binding SelectedColorBrush}"
+                                Width="80" Height="32"
+                                CornerRadius="4" Padding="0" HorizontalAlignment="Left"
+                                ToolTip.Tip="Click to open / close the color wheel" />
 
-                        <!-- Color wheel — appears when IsColorPickerOpen -->
+                        <!-- Color wheel — appears when IsColorPickerOpen.
+                             SelectedIndex=1 → Spectrum tab (ring).
+                             IsColorPaletteVisible=False removes the Palette tab so
+                             the ring is the landing view. -->
                         <Border IsVisible="{Binding IsColorPickerOpen}"
                                 Background="#202830" CornerRadius="6" Padding="8">
                             <ColorView Color="{Binding SelectedColor, Mode=TwoWay}"
                                        ColorSpectrumShape="Ring"
                                        IsAlphaEnabled="False"
                                        IsAlphaVisible="False"
+                                       IsColorPaletteVisible="False"
+                                       SelectedIndex="0"
                                        HorizontalAlignment="Stretch" />
                         </Border>
-
-                        <TextBlock Text="Click the floor, a wall, a door, window, or item to select it."
-                                   FontSize="10" Foreground="#5E666F" TextWrapping="Wrap"
-                                   IsVisible="{Binding !HasPaintTarget}" />
                     </StackPanel>
 
                     <!-- Hint when nothing is selected -->
