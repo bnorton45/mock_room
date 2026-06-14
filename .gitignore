@@ -48,3 +48,6 @@ packaging/icons/
 .env
 *.env
 !*.env.example
+
+# Claude Code tool config (machine-local, never commit)
+.claude/
