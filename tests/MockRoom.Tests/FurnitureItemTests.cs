@@ -66,6 +66,18 @@ public class FurnitureItemTests
     }
 
     [Fact]
+    public void Catalog_ReclineTemplate_HasArmsBackAndHeadrest()
+    {
+        var catalog = new ItemCatalog();
+        var item = catalog.Create("recliner", Vec2.Zero);
+        Assert.IsType<FurnitureItem>(item);
+        var fi = (FurnitureItem)item;
+        Assert.Equal(5, fi.Parts.Count); // left arm, right arm, back cushion, seat, headrest
+        Assert.True(fi.Parts.Any(p => p.Height >= 1.0), "recliner back should be at least 1 m tall");
+        Assert.True(fi.Parts.Any(p => p.BottomY > 0), "headrest should be raised above BottomY=0");
+    }
+
+    [Fact]
     public void Catalog_TvStandTemplate_CreatesBoxItem()
     {
         var catalog = new ItemCatalog();

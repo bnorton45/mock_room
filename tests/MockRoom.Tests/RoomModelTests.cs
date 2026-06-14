@@ -13,8 +13,8 @@ public class RoomModelTests
     public void Catalog_SeedsAllStandardPresets()
     {
         var catalog = new ItemCatalog();
-        Assert.Equal(8, catalog.Templates.Count);
-        foreach (var id in new[] { "table", "chair", "couch", "tv-stand", "coffee-table", "bed", "dresser", "chest" })
+        Assert.Equal(9, catalog.Templates.Count);
+        foreach (var id in new[] { "table", "chair", "recliner", "couch", "tv-stand", "coffee-table", "bed", "dresser", "chest" })
             Assert.True(catalog.TryGet(id, out _), $"missing template: {id}");
     }
 
