@@ -11,6 +11,7 @@ public enum ItemCategory
     Chair,
     Recliner,
     Couch,
+    SectionalCouch,
     TvStand,
     CoffeeTable,
     Bed,
