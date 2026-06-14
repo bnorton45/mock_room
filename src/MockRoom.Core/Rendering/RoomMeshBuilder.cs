@@ -3,7 +3,6 @@ using System.Numerics;
 using MockRoom.Core.Geometry;
 using MockRoom.Core.Items;
 using MockRoom.Core.Rooms;
-using MockRoom.Core.Spatial;
 
 namespace MockRoom.Core.Rendering;
 
@@ -21,8 +20,7 @@ public static class RoomMeshBuilder
 
     private readonly record struct Mat(float R, float G, float B, float Metallic, float Roughness);
 
-    private static readonly Mat FreeFloorColor = new(0.18f, 0.40f, 0.66f, 0f, 0.9f);
-    private static readonly Mat FallbackItem   = new(0.60f, 0.64f, 0.68f, 0f, 0.8f);
+    private static readonly Mat FallbackItem = new(0.60f, 0.64f, 0.68f, 0f, 0.8f);
 
     /// <summary>Thickness of an open door leaf and a window frame ring, in meters.</summary>
     private const float LeafThickness = 0.04f;
@@ -33,14 +31,7 @@ public static class RoomMeshBuilder
     /// <summary>Width of the thicker mid-rail that separates the top and bottom halves, in meters.</summary>
     private const float GlazingMidRailThickness = 0.07f;
 
-    /// <summary>Lifts the free-floor overlay a hair above the floor to avoid z-fighting.</summary>
-    private const float FreeFloorLift = 0.003f;
-
-    /// <summary>
-    /// Builds the room mesh. When <paramref name="freeFloor"/> is supplied its free
-    /// cells are painted as a blue overlay just above the floor.
-    /// </summary>
-    public static MeshData Build(Room room, OccupancyGrid? freeFloor = null, PaintTarget? selected = null)
+    public static MeshData Build(Room room, PaintTarget? selected = null)
     {
         var dims = room.Dimensions;
         var w = (float)dims.Width.Meters;
@@ -57,9 +48,6 @@ public static class RoomMeshBuilder
             new Vector3(0, 0, 0), new Vector3(w, 0, 0), new Vector3(w, 0, l), new Vector3(0, 0, l),
             new Vector3(0, 1, 0), floorMat);
 
-        if (freeFloor is not null)
-            AddFreeFloor(verts, freeFloor, w, l);
-
         AddWalls(verts, room, w, l, h, surfaces);
         AddDoorLeaves(verts, room);
 
@@ -67,23 +55,6 @@ public static class RoomMeshBuilder
             AddItem(verts, item);
 
         return new MeshData(verts.ToArray(), verts.Count / FloatsPerVertex);
-    }
-
-    private static void AddFreeFloor(List<float> verts, OccupancyGrid grid, float w, float l)
-    {
-        var cell = (float)grid.CellSize;
-        var up = new Vector3(0, 1, 0);
-        foreach (var (row, colStart, colEnd) in grid.FreeRuns())
-        {
-            var x0 = colStart * cell;
-            var x1 = MathF.Min(colEnd * cell, w);
-            var z0 = row * cell;
-            var z1 = MathF.Min((row + 1) * cell, l);
-            AddQuad(verts,
-                new Vector3(x0, FreeFloorLift, z0), new Vector3(x1, FreeFloorLift, z0),
-                new Vector3(x1, FreeFloorLift, z1), new Vector3(x0, FreeFloorLift, z1),
-                up, FreeFloorColor);
-        }
     }
 
     private static void AddWalls(List<float> verts, Room room, float w, float l, float h,

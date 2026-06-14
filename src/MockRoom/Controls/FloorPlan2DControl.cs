@@ -7,7 +7,6 @@ using MockRoom.Core.Geometry;
 using MockRoom.Core.Items;
 using MockRoom.Core.Rendering;
 using MockRoom.Core.Rooms;
-using MockRoom.Core.Spatial;
 
 namespace MockRoom.Controls;
 
@@ -28,9 +27,6 @@ public sealed class FloorPlan2DControl : Control
         AvaloniaProperty.Register<FloorPlan2DControl, PaintTarget?>(
             nameof(SelectedTarget), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
 
-    public static readonly StyledProperty<SpaceReport?> SpaceReportProperty =
-        AvaloniaProperty.Register<FloorPlan2DControl, SpaceReport?>(nameof(SpaceReport));
-
     private double _scale = 1;
     private double _offsetX;
     private double _offsetY;
@@ -41,13 +37,12 @@ public sealed class FloorPlan2DControl : Control
     /// <summary>Raised while the user drags an item; carries the item and its desired new center (world meters).</summary>
     public event Action<RoomItem, Vec2>? ItemDragged;
 
-    private static readonly IBrush FreeFloorBrush = new SolidColorBrush(Color.FromArgb(0x80, 0x2F, 0x6E, 0xB0));
-    private static readonly IPen   InnerEdgePen  = new Pen(new SolidColorBrush(Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF)), 1);
+    private static readonly IPen InnerEdgePen = new Pen(new SolidColorBrush(Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF)), 1);
 
     static FloorPlan2DControl()
     {
         AffectsRender<FloorPlan2DControl>(
-            RoomProperty, RenderVersionProperty, SelectedTargetProperty, SpaceReportProperty);
+            RoomProperty, RenderVersionProperty, SelectedTargetProperty);
     }
 
     public Room? Room
@@ -66,13 +61,6 @@ public sealed class FloorPlan2DControl : Control
     {
         get => GetValue(SelectedTargetProperty);
         set => SetValue(SelectedTargetProperty, value);
-    }
-
-    /// <summary>Latest space report; its grid drives the blue free-floor overlay.</summary>
-    public SpaceReport? SpaceReport
-    {
-        get => GetValue(SpaceReportProperty);
-        set => SetValue(SpaceReportProperty, value);
     }
 
     public override void Render(DrawingContext context)
@@ -126,14 +114,12 @@ public sealed class FloorPlan2DControl : Control
         DrawWallStrip(new Rect(outer.X, floor.Y, wallPx, floor.Height), WallSide.West);
         DrawWallStrip(new Rect(floor.X + floor.Width, floor.Y, wallPx, floor.Height), WallSide.East);
 
-        // Floor interior — brightened when selected.
-        var floorColor = ParseHex(room.Surfaces.FloorColorHex);
-        IBrush floorBrush = SelectedTarget is FloorPaintTarget
-            ? new SolidColorBrush(Brighten(floorColor))
-            : new SolidColorBrush(floorColor);
-        context.FillRectangle(floorBrush, floor);
+        // Floor interior — always drawn at the actual floor color.
+        context.FillRectangle(new SolidColorBrush(ParseHex(room.Surfaces.FloorColorHex)), floor);
 
-        DrawFreeFloor(context, roomW, roomL);
+        // Selection outline when the floor is the active paint target.
+        if (SelectedTarget is FloorPaintTarget)
+            context.DrawRectangle(null, SelectedItemPen, floor);
 
         // Thin line marking the wall-floor inner boundary.
         context.DrawRectangle(null, InnerEdgePen, floor);
@@ -159,30 +145,6 @@ public sealed class FloorPlan2DControl : Control
         DrawCentered(context, "S", new Point(center.X, center.Y + r + 7), 10, CompassLabelBrush);
         DrawCentered(context, "E", new Point(center.X + r + 7, center.Y), 10, CompassLabelBrush);
         DrawCentered(context, "W", new Point(center.X - r - 7, center.Y), 10, CompassLabelBrush);
-    }
-
-    private void DrawFreeFloor(DrawingContext context, double roomW, double roomL)
-    {
-        var grid = SpaceReport?.Grid;
-        if (grid is null)
-            return;
-
-        var cell = grid.CellSize;
-        foreach (var (row, colStart, colEnd) in grid.FreeRuns())
-        {
-            var x0 = colStart * cell;
-            var x1 = System.Math.Min(colEnd * cell, roomW);
-            var y0 = row * cell;
-            var y1 = System.Math.Min((row + 1) * cell, roomL);
-            // Use explicit Rect construction: Rect(Point,Point) in Avalonia 11 does not
-            // normalise coordinates, so the Y-flipped pair would produce negative height.
-            var cellRect = new Rect(
-                _offsetX + x0 * _scale,
-                _offsetY + (roomL - y1) * _scale,   // y1 is the world-top → screen-top
-                (x1 - x0) * _scale,
-                (y1 - y0) * _scale);
-            context.FillRectangle(FreeFloorBrush, cellRect);
-        }
     }
 
     private void DrawItem(DrawingContext context, RoomItem item, bool selected)
