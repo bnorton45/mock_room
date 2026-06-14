@@ -80,6 +80,18 @@ public sealed class ItemCatalog : IItemCatalog
             P( 0,    0.10,  0, 1.80, 0.60, 0.45),  // seat
         ]),
 
+        // L-shaped sectional couch (2.6 m × 1.8 m).
+        // Main section runs left-right (backrest at Y=-0.9), chaise extends forward-left (Y: 0→+0.9, X: -1.3→-0.4).
+        // Left outer wall spans the full depth and doubles as the chaise back. Right arm caps the main section end.
+        Meters("sectional-couch", "L-Shaped Couch", ItemCategory.SectionalCouch, 2.6, 1.8, 0.85, "#7A6B9A", [
+            P(-1.25,  0,     0, 0.10, 1.80, 0.65),  // left outer wall: arm (main) + chaise back
+            P( 0,    -0.77,  0, 2.40, 0.26, 0.85),  // main backrest
+            P( 0,    -0.32,  0, 2.40, 0.64, 0.45),  // main seat
+            P( 1.25, -0.45,  0, 0.10, 0.90, 0.65),  // right arm (end of main section)
+            P(-0.80,  0.40,  0, 0.80, 0.80, 0.45),  // chaise seat
+            P(-0.80,  0.85,  0, 0.80, 0.10, 0.65),  // chaise front arm
+        ]),
+
         // TV Stand: simple box (no visible silhouette improvement from parts).
         Meters("tv-stand", "TV Stand", ItemCategory.TvStand, 1.5, 0.4, 0.5, "#4A4A4A"),
 

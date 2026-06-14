@@ -78,6 +78,20 @@ public class FurnitureItemTests
     }
 
     [Fact]
+    public void Catalog_SectionalCouchTemplate_HasLShapeParts()
+    {
+        var catalog = new ItemCatalog();
+        var item = catalog.Create("sectional-couch", Vec2.Zero);
+        Assert.IsType<FurnitureItem>(item);
+        var fi = (FurnitureItem)item;
+        // left outer wall, main backrest, main seat, right arm, chaise seat, chaise front arm
+        Assert.Equal(6, fi.Parts.Count);
+        Assert.True(fi.Parts.Any(p => p.Height >= 0.85), "should have a part at least 0.85 m tall (main backrest)");
+        // Chaise seat is offset in positive Y (forward of the main section)
+        Assert.True(fi.Parts.Any(p => p.LocalY > 0 && p.Depth >= 0.5), "should have a chaise seat part in the forward quadrant");
+    }
+
+    [Fact]
     public void Catalog_TvStandTemplate_CreatesBoxItem()
     {
         var catalog = new ItemCatalog();
