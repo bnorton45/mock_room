@@ -3,7 +3,6 @@ using MockRoom.Core.Geometry;
 using MockRoom.Core.Items;
 using MockRoom.Core.Rooms;
 using MockRoom.Core.Rendering;
-using MockRoom.Core.Spatial;
 using MockRoom.Core.Units;
 using Xunit;
 
@@ -112,7 +111,7 @@ public class RoomMeshBuilderTests
         room.AddItem(item);
 
         var plain = RoomMeshBuilder.Build(room);
-        var withSelection = RoomMeshBuilder.Build(room, freeFloor: null, selected: new ItemPaintTarget(item));
+        var withSelection = RoomMeshBuilder.Build(room, selected: new ItemPaintTarget(item));
 
         // Selection no longer bakes a highlight into vertex colors — 3D always shows the true color.
         Assert.Equal(plain.VertexCount, withSelection.VertexCount);
@@ -128,7 +127,7 @@ public class RoomMeshBuilderTests
         var notInRoom = new BoxItem("Other", ItemCategory.Custom, side, side, side);
 
         var plain = RoomMeshBuilder.Build(room);
-        var withSelection = RoomMeshBuilder.Build(room, freeFloor: null, selected: new ItemPaintTarget(notInRoom));
+        var withSelection = RoomMeshBuilder.Build(room, selected: new ItemPaintTarget(notInRoom));
 
         Assert.Equal(plain.Vertices, withSelection.Vertices);
     }
@@ -187,26 +186,4 @@ public class RoomMeshBuilderTests
         Assert.True(foundRoughness, "roughness not baked into item vertices");
     }
 
-    [Fact]
-    public void FreeFloorGrid_AddsBlueOverlayAboveTheFloor()
-    {
-        var room = EmptyRoom();
-        var grid = new OccupancyGridSpaceCalculator().Compute(room).Grid;
-
-        var plain = RoomMeshBuilder.Build(room);
-        var shaded = RoomMeshBuilder.Build(room, grid);
-
-        // The overlay adds geometry, all of it lifted just above the floor (y > 0).
-        Assert.True(shaded.VertexCount > plain.VertexCount);
-
-        var liftedVerts = 0;
-        for (var i = 0; i < shaded.Vertices.Length; i += RoomMeshBuilder.FloatsPerVertex)
-        {
-            var y = shaded.Vertices[i + 1];
-            if (y > 0f && y < 0.01f)
-                liftedVerts++;
-        }
-
-        Assert.True(liftedVerts > 0);
-    }
 }

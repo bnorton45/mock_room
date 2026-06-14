@@ -6,7 +6,6 @@ using Avalonia.OpenGL;
 using Avalonia.OpenGL.Controls;
 using MockRoom.Core.Rendering;
 using MockRoom.Core.Rooms;
-using MockRoom.Core.Spatial;
 using Silk.NET.OpenGL;
 
 namespace MockRoom.Controls;
@@ -45,9 +44,6 @@ public sealed class Viewport3DControl : OpenGlControlBase
     public static readonly StyledProperty<double> EyeHeightProperty =
         AvaloniaProperty.Register<Viewport3DControl, double>(
             nameof(EyeHeight), defaultValue: 1.6, defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
-
-    public static readonly StyledProperty<SpaceReport?> SpaceReportProperty =
-        AvaloniaProperty.Register<Viewport3DControl, SpaceReport?>(nameof(SpaceReport));
 
     public static readonly StyledProperty<PaintTarget?> SelectedTargetProperty =
         AvaloniaProperty.Register<Viewport3DControl, PaintTarget?>(
@@ -123,13 +119,6 @@ public sealed class Viewport3DControl : OpenGlControlBase
         set => SetValue(EyeHeightProperty, value);
     }
 
-    /// <summary>Latest space report; its grid paints the blue free-floor overlay.</summary>
-    public SpaceReport? SpaceReport
-    {
-        get => GetValue(SpaceReportProperty);
-        set => SetValue(SpaceReportProperty, value);
-    }
-
     /// <summary>
     /// The currently selected paint target (item, wall, floor, or opening); highlighted
     /// in the mesh and set by ray-picking on click.
@@ -175,13 +164,13 @@ public sealed class Viewport3DControl : OpenGlControlBase
         base.OnPropertyChanged(change);
 
         if (change.Property == RoomProperty || change.Property == RenderVersionProperty ||
-            change.Property == SpaceReportProperty || change.Property == SelectedTargetProperty)
+            change.Property == SelectedTargetProperty)
         {
             _meshDirty = true;
         }
 
         if (change.Property == RoomProperty || change.Property == RenderVersionProperty ||
-            change.Property == SpaceReportProperty || change.Property == SelectedTargetProperty ||
+            change.Property == SelectedTargetProperty ||
             change.Property == CameraModeProperty || change.Property == EyeHeightProperty ||
             change.Property == ViewpointVersionProperty)
         {
@@ -311,7 +300,7 @@ public sealed class Viewport3DControl : OpenGlControlBase
         if (!_meshDirty && _uploadedVersion == RenderVersion)
             return;
 
-        var mesh = RoomMeshBuilder.Build(room, SpaceReport?.Grid, SelectedTarget);
+        var mesh = RoomMeshBuilder.Build(room, SelectedTarget);
         _vertexCount = mesh.VertexCount;
 
         glApi.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);

@@ -232,14 +232,12 @@
                     IsVisible="{Binding Is2D}"
                     Room="{Binding Room}"
                     RenderVersion="{Binding RenderVersion}"
-                    SpaceReport="{Binding LastReport}"
                     SelectedTarget="{Binding SelectedTarget, Mode=TwoWay}" />
 
                 <ctrl:Viewport3DControl x:Name="View3D"
                     IsVisible="{Binding Is3D}"
                     Room="{Binding Room}"
                     RenderVersion="{Binding RenderVersion}"
-                    SpaceReport="{Binding LastReport}"
                     SelectedTarget="{Binding SelectedTarget, Mode=TwoWay}"
                     CameraMode="{Binding CameraMode}"
                     EyeHeight="{Binding EyeHeightMeters, Mode=TwoWay}"
