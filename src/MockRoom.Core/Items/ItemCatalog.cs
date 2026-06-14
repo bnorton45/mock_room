@@ -62,6 +62,16 @@ public sealed class ItemCatalog : IItemCatalog
             P(0, -0.22, 0, 0.50, 0.06, 0.90),  // backrest
         ]),
 
+        // Recliner (La-Z-Boy style): wide padded arms, thick back with raised headrest, deep seat.
+        // Footrest is stowed internally in seated position so it is not shown in the top-down plan.
+        Meters("recliner", "Recliner", ItemCategory.Recliner, 0.85, 0.90, 1.05, "#A67C52", [
+            P(-0.35,  0,     0,    0.13, 0.90, 0.62),  // left arm pad
+            P( 0.35,  0,     0,    0.13, 0.90, 0.62),  // right arm pad
+            P( 0,    -0.30,  0,    0.59, 0.30, 1.05),  // back cushion (full height)
+            P( 0,     0.10,  0,    0.59, 0.54, 0.50),  // seat cushion
+            P( 0,    -0.32,  0.80, 0.42, 0.24, 0.25),  // headrest (raised above back cushion)
+        ]),
+
         // Couch: seat, backrest, and two side arms — gives an unmistakable sofa silhouette.
         Meters("couch", "Couch", ItemCategory.Couch, 2.0, 0.9, 0.85, "#5C6B8A", [
             P(-0.95, 0,     0, 0.10, 0.90, 0.65),  // left arm

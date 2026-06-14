@@ -9,6 +9,7 @@ public enum ItemCategory
 {
     Table,
     Chair,
+    Recliner,
     Couch,
     TvStand,
     CoffeeTable,
