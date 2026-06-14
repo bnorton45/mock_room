@@ -223,15 +223,22 @@ public static class RoomMeshBuilder
         var cos = Math.Cos(rot);
         var sin = Math.Sin(rot);
 
+        // Scale each part from the natural (catalog-default) dimensions to the item's
+        // current dimensions so resizing via the apply-item form works correctly.
+        var sx = item.NaturalWidth.Meters > 0 ? item.Width.Meters / item.NaturalWidth.Meters : 1.0;
+        var sy = item.NaturalDepth.Meters > 0 ? item.Depth.Meters / item.NaturalDepth.Meters : 1.0;
+        var sz = item.NaturalHeight.Meters > 0 ? item.Height.Meters / item.NaturalHeight.Meters : 1.0;
+
         foreach (var part in item.Parts)
         {
             var mat = ParseMaterial(part.ColorHex ?? item.ColorHex, item.Metallic, item.Roughness);
-            // Rotate the part's local center offset into world space.
+            var lx = part.LocalX * sx;
+            var ly = part.LocalY * sy;
             var worldCenter = new Vec2(
-                pos.X + part.LocalX * cos - part.LocalY * sin,
-                pos.Y + part.LocalX * sin + part.LocalY * cos);
-            var footprint = new FootprintRect(worldCenter, part.Width, part.Depth, rot);
-            AddCuboid(verts, footprint, (float)part.Height, mat, (float)part.BottomY);
+                pos.X + lx * cos - ly * sin,
+                pos.Y + lx * sin + ly * cos);
+            var footprint = new FootprintRect(worldCenter, part.Width * sx, part.Depth * sy, rot);
+            AddCuboid(verts, footprint, (float)(part.Height * sz), mat, (float)(part.BottomY * sz));
         }
     }
 

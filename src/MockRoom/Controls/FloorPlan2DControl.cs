@@ -166,6 +166,9 @@ public sealed class FloorPlan2DControl : Control
         var cos = System.Math.Cos(rot);
         var sin = System.Math.Sin(rot);
 
+        var sx = item.NaturalWidth.Meters > 0 ? item.Width.Meters / item.NaturalWidth.Meters : 1.0;
+        var sy = item.NaturalDepth.Meters > 0 ? item.Depth.Meters / item.NaturalDepth.Meters : 1.0;
+
         // Sort parts bottom-up so higher parts are drawn on top (e.g. tabletop over legs in 2D).
         var sortedParts = item.Parts
             .OrderBy(p => p.BottomY)
@@ -173,10 +176,12 @@ public sealed class FloorPlan2DControl : Control
 
         foreach (var part in sortedParts)
         {
+            var lx = part.LocalX * sx;
+            var ly = part.LocalY * sy;
             var worldCenter = new Vec2(
-                pos.X + part.LocalX * cos - part.LocalY * sin,
-                pos.Y + part.LocalX * sin + part.LocalY * cos);
-            var footprint = new FootprintRect(worldCenter, part.Width, part.Depth, rot);
+                pos.X + lx * cos - ly * sin,
+                pos.Y + lx * sin + ly * cos);
+            var footprint = new FootprintRect(worldCenter, part.Width * sx, part.Depth * sy, rot);
             var color = part.ColorHex is not null ? ParseHex(part.ColorHex) : ParseHex(item.ColorHex);
             DrawItemPolygon(context, footprint.Corners(), color, pen);
         }

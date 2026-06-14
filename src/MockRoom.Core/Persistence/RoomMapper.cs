@@ -72,23 +72,25 @@ public static class RoomMapper
         return room;
     }
 
-    private static ItemDto ToDto(RoomItem item) => new()
+    private static ItemDto ToDto(RoomItem item)
     {
-        Id = item.Id,
-        ShapeKind = item.ShapeKind,
-        Name = item.Name,
-        Category = item.Category,
-        WidthMeters = item.Width.Meters,
-        DepthMeters = item.Depth.Meters,
-        HeightMeters = item.Height.Meters,
-        PositionXMeters = item.Position.X,
-        PositionYMeters = item.Position.Y,
-        RotationRadians = item.Rotation,
-        ColorHex = item.ColorHex,
-        Metallic = item.Metallic,
-        Roughness = item.Roughness,
-        Parts = item is FurnitureItem fi
-            ? fi.Parts.Select(p => new FurniturePartDto
+        var fi = item as FurnitureItem;
+        return new ItemDto
+        {
+            Id = item.Id,
+            ShapeKind = item.ShapeKind,
+            Name = item.Name,
+            Category = item.Category,
+            WidthMeters = item.Width.Meters,
+            DepthMeters = item.Depth.Meters,
+            HeightMeters = item.Height.Meters,
+            PositionXMeters = item.Position.X,
+            PositionYMeters = item.Position.Y,
+            RotationRadians = item.Rotation,
+            ColorHex = item.ColorHex,
+            Metallic = item.Metallic,
+            Roughness = item.Roughness,
+            Parts = fi?.Parts.Select(p => new FurniturePartDto
             {
                 LocalX = p.LocalX,
                 LocalY = p.LocalY,
@@ -97,9 +99,12 @@ public static class RoomMapper
                 D = p.Depth,
                 H = p.Height,
                 ColorHex = p.ColorHex,
-            }).ToList()
-            : null,
-    };
+            }).ToList(),
+            NaturalWidthMeters = fi?.NaturalWidth.Meters ?? 0,
+            NaturalDepthMeters = fi?.NaturalDepth.Meters ?? 0,
+            NaturalHeightMeters = fi?.NaturalHeight.Meters ?? 0,
+        };
+    }
 
     private static RoomItem FromDto(ItemDto dto)
     {
@@ -108,10 +113,18 @@ public static class RoomMapper
             var parts = dto.Parts
                 .Select(p => new FurniturePart(p.LocalX, p.LocalY, p.BottomY, p.W, p.D, p.H, p.ColorHex))
                 .ToList();
+            // Fall back to current dimensions when natural dims are absent (older saved files that
+            // predate the scaling feature — item was never resized so natural == current).
+            var natW = dto.NaturalWidthMeters > 0 ? dto.NaturalWidthMeters : dto.WidthMeters;
+            var natD = dto.NaturalDepthMeters > 0 ? dto.NaturalDepthMeters : dto.DepthMeters;
+            var natH = dto.NaturalHeightMeters > 0 ? dto.NaturalHeightMeters : dto.HeightMeters;
             return new FurnitureItem(dto.Name, dto.Category,
                 Length.FromMeters(dto.WidthMeters),
                 Length.FromMeters(dto.DepthMeters),
-                Length.FromMeters(dto.HeightMeters), parts)
+                Length.FromMeters(dto.HeightMeters), parts,
+                Length.FromMeters(natW),
+                Length.FromMeters(natD),
+                Length.FromMeters(natH))
             {
                 Id = dto.Id,
                 Position = new Vec2(dto.PositionXMeters, dto.PositionYMeters),

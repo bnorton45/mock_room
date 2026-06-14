@@ -28,4 +28,13 @@ public sealed record ItemDto
 
     /// <summary>Non-null for <see cref="MockRoom.Core.Items.FurnitureItem"/>; null for plain boxes.</summary>
     public List<FurniturePartDto>? Parts { get; init; }
+
+    /// <summary>
+    /// Original catalog dimensions the parts were designed for.
+    /// Zero in older saved files — the loader falls back to the current dimensions,
+    /// which is correct when the item has never been resized.
+    /// </summary>
+    public double NaturalWidthMeters { get; init; }
+    public double NaturalDepthMeters { get; init; }
+    public double NaturalHeightMeters { get; init; }
 }

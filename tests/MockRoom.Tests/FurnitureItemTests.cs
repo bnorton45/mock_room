@@ -194,6 +194,57 @@ public class FurnitureItemTests
         Assert.Equal("furniture", restoredItem.ShapeKind);
     }
 
+    // ── Scaling (resize via apply-item form) ─────────────────────────────────────
+
+    [Fact]
+    public void FurnitureItem_DoubledHeight_ScalesPartsInMesh()
+    {
+        var room = EmptyRoom();
+        var catalog = new ItemCatalog();
+        var table = (FurnitureItem)catalog.Create("table", new Vec2(2.5, 2));
+        var originalHeight = table.NaturalHeight.Meters; // 0.75 m
+
+        // Simulate the user doubling the table height.
+        table.Height = Length.FromMeters(originalHeight * 2);
+        room.AddItem(table);
+
+        var mesh = RoomMeshBuilder.Build(room);
+
+        // Scaled tabletop top should now be at 1.50 m (was 0.75 m).
+        var hasScaledTop = false;
+        for (var i = 0; i < mesh.Vertices.Length; i += RoomMeshBuilder.FloatsPerVertex)
+        {
+            if (Math.Abs(mesh.Vertices[i + 1] - (float)(originalHeight * 2)) < 1e-3f)
+            {
+                hasScaledTop = true;
+                break;
+            }
+        }
+
+        Assert.True(hasScaledTop, "doubling table height should produce a vertex at 2× the original top height");
+    }
+
+    [Fact]
+    public void FurnitureItem_NaturalDimensionsPreservedThroughSerialisation()
+    {
+        var room = EmptyRoom();
+        var catalog = new ItemCatalog();
+        var table = (FurnitureItem)catalog.Create("table", new Vec2(2, 2));
+        // Resize the table.
+        table.Width = Length.FromMeters(2.4);
+        table.Height = Length.FromMeters(1.5);
+        room.AddItem(table);
+
+        var doc = MockRoom.Core.Persistence.RoomMapper.ToDocument(room);
+        var restored = MockRoom.Core.Persistence.RoomMapper.FromDocument(doc);
+
+        var rt = Assert.IsType<FurnitureItem>(restored.Items.Single());
+        Assert.Equal(1.2, rt.NaturalWidth.Meters, precision: 6);   // catalog default
+        Assert.Equal(0.75, rt.NaturalHeight.Meters, precision: 6);  // catalog default
+        Assert.Equal(2.4, rt.Width.Meters, precision: 6);           // user-set
+        Assert.Equal(1.5, rt.Height.Meters, precision: 6);          // user-set
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────────
 
     private static FurnitureItem MakeChair()
