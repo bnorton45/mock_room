@@ -3,6 +3,7 @@
         xmlns:vm="clr-namespace:MockRoom.ViewModels"
         xmlns:ctrl="clr-namespace:MockRoom.Controls"
         xmlns:rooms="clr-namespace:MockRoom.Core.Rooms;assembly=MockRoom.Core"
+        xmlns:items="clr-namespace:MockRoom.Core.Items;assembly=MockRoom.Core"
         x:Class="MockRoom.MainWindow"
         x:Name="Root"
         x:DataType="vm:RoomEditorViewModel"
@@ -65,14 +66,28 @@
                                    TextWrapping="Wrap" IsVisible="{Binding HasDimensionError}" />
                     </StackPanel>
 
-                    <!-- Add a box -->
+                    <!-- Add shaped furniture from catalog -->
                     <StackPanel Spacing="6">
-                        <TextBlock Text="ADD A BOX" FontSize="11" Foreground="#7A828C" />
-                        <TextBox Text="{Binding NewItemName}" Watermark="Name (e.g. Bed, Desk)" />
+                        <TextBlock Text="ADD FURNITURE" FontSize="11" Foreground="#7A828C" />
+                        <ComboBox HorizontalAlignment="Stretch"
+                                  ItemsSource="{Binding FurnitureTemplates}"
+                                  SelectedItem="{Binding SelectedFurnitureTemplate, Mode=TwoWay}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="items:ItemTemplate">
+                                    <TextBlock Text="{Binding DisplayName}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Button Content="Add furniture" HorizontalAlignment="Stretch"
+                                Command="{Binding AddFurnitureCommand}" />
+                    </StackPanel>
+
+                    <!-- Add a plain custom box -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="CUSTOM BOX" FontSize="11" Foreground="#7A828C" />
+                        <TextBox Text="{Binding NewItemName}" Watermark="Name (e.g. Shelf, Stand)" />
                         <Button Content="Add box" HorizontalAlignment="Stretch"
                                 Command="{Binding AddBoxCommand}" />
-                        <TextBlock Text="Adds a 1 m box you can rename, resize, and drag."
-                                   FontSize="10" Foreground="#5E666F" TextWrapping="Wrap" />
                     </StackPanel>
 
                     <!-- Openings: doors, closet doors, windows -->

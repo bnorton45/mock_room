@@ -22,6 +22,8 @@ public sealed class RoomEditorViewModel : ViewModelBase
     private readonly ISpaceCalculator _calculator;
     private readonly IUnitFormatter _formatter;
     private readonly IRoomRepository _repository;
+    private readonly IItemCatalog _catalog;
+    private ItemTemplate? _selectedFurnitureTemplate;
 
     /// <summary>Default footprint and height for a freshly added box, in meters (a basic 1 m editable cube).</summary>
     private const double DefaultBoxMeters = 1.0;
@@ -91,15 +93,18 @@ public sealed class RoomEditorViewModel : ViewModelBase
     }
 
     public RoomEditorViewModel(ISpaceCalculator calculator, IUnitFormatter formatter,
-        IRoomRepository? repository = null)
+        IRoomRepository? repository = null, IItemCatalog? catalog = null)
     {
         _calculator = calculator;
         _formatter = formatter;
         _repository = repository ?? new JsonRoomRepository();
+        _catalog = catalog ?? new ItemCatalog();
+        _selectedFurnitureTemplate = _catalog.Templates.Count > 0 ? _catalog.Templates[0] : null;
 
         Room = new Room(RoomDimensions.FromMeters(5, 4, 2.5), UnitSystem.Metric);
 
         AddBoxCommand = new RelayCommand(_ => AddBox());
+        AddFurnitureCommand = new RelayCommand(_ => AddFurniture(), _ => SelectedFurnitureTemplate is not null);
         RemoveSelectedCommand = new RelayCommand(_ => RemoveSelected(), _ => SelectedItem is not null);
         SetMetricCommand = new RelayCommand(_ => SetUnitSystem(UnitSystem.Metric));
         SetImperialCommand = new RelayCommand(_ => SetUnitSystem(UnitSystem.Imperial));
@@ -129,6 +134,7 @@ public sealed class RoomEditorViewModel : ViewModelBase
     public ObservableCollection<RoomItem> Items { get; } = [];
 
     public RelayCommand AddBoxCommand { get; }
+    public RelayCommand AddFurnitureCommand { get; }
     public RelayCommand RemoveSelectedCommand { get; }
     public RelayCommand SetMetricCommand { get; }
     public RelayCommand SetImperialCommand { get; }
@@ -223,7 +229,21 @@ public sealed class RoomEditorViewModel : ViewModelBase
     public bool IsImperial => _unitSystem == UnitSystem.Imperial;
     public string UnitHint => IsMetric ? "meters (e.g. 5 or 250 cm)" : "feet (e.g. 16 or 8' 2\")";
 
-    /// <summary>Name for the next box added to the room. Empty falls back to "Box".</summary>
+    /// <summary>All furniture templates available for placement.</summary>
+    public IReadOnlyList<ItemTemplate> FurnitureTemplates => _catalog.Templates;
+
+    /// <summary>Currently selected template in the furniture picker.</summary>
+    public ItemTemplate? SelectedFurnitureTemplate
+    {
+        get => _selectedFurnitureTemplate;
+        set
+        {
+            if (SetField(ref _selectedFurnitureTemplate, value))
+                AddFurnitureCommand.RaiseCanExecuteChanged();
+        }
+    }
+
+    /// <summary>Name for the next custom box added to the room. Empty falls back to "Box".</summary>
     public string NewItemName { get => _newItemName; set => SetField(ref _newItemName, value); }
 
     public string WidthText { get => _widthText; set => SetField(ref _widthText, value); }
@@ -293,11 +313,11 @@ public sealed class RoomEditorViewModel : ViewModelBase
     /// <summary>Human-readable label for what is selected, shown above the color picker.</summary>
     public string SelectedTargetLabel => _selectedTarget switch
     {
-        FloorPaintTarget                 => "Floor",
-        WallPaintTarget wt               => $"{wt.Side} Wall",
-        OpeningPaintTarget op            => $"{op.Opening.Kind} ({op.Opening.Wall} wall)",
+        FloorPaintTarget => "Floor",
+        WallPaintTarget wt => $"{wt.Side} Wall",
+        OpeningPaintTarget op => $"{op.Opening.Kind} ({op.Opening.Wall} wall)",
         ItemPaintTarget { Item: var it } => it.Name,
-        _                                => "Nothing selected",
+        _ => "Nothing selected",
     };
 
     // ── Unified paint color ───────────────────────────────────────────────────
@@ -310,11 +330,11 @@ public sealed class RoomEditorViewModel : ViewModelBase
     {
         get => _selectedTarget switch
         {
-            FloorPaintTarget                 => ParseHex(Room.Surfaces.FloorColorHex),
-            WallPaintTarget wt               => ParseHex(Room.Surfaces.WallColorFor(wt.Side)),
-            OpeningPaintTarget op            => ParseHex(op.Opening.ColorHex),
+            FloorPaintTarget => ParseHex(Room.Surfaces.FloorColorHex),
+            WallPaintTarget wt => ParseHex(Room.Surfaces.WallColorFor(wt.Side)),
+            OpeningPaintTarget op => ParseHex(op.Opening.ColorHex),
             ItemPaintTarget { Item: var it } => ParseHex(it.ColorHex),
-            _                                => ParseHex("#9AA0A6"),
+            _ => ParseHex("#9AA0A6"),
         };
         set
         {
@@ -583,6 +603,21 @@ public sealed class RoomEditorViewModel : ViewModelBase
         RefreshItemTexts();
         RefreshOpeningTexts();
         RefreshAreaTexts();
+    }
+
+    private void AddFurniture()
+    {
+        if (SelectedFurnitureTemplate is null)
+            return;
+        var step = 0.3 * (_placementCounter++ % 5);
+        var center = new Vec2(
+            Room.Dimensions.Width.Meters / 2 + step,
+            Room.Dimensions.Length.Meters / 2 + step);
+        var item = SelectedFurnitureTemplate.CreateItem(center);
+        Room.AddItem(item);
+        Items.Add(item);
+        SelectedTarget = new ItemPaintTarget(item);
+        Recompute();
     }
 
     private void AddBox()

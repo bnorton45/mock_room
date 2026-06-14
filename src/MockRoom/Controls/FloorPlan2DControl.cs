@@ -149,7 +149,42 @@ public sealed class FloorPlan2DControl : Control
 
     private void DrawItem(DrawingContext context, RoomItem item, bool selected)
     {
-        var (p0, p1, p2, p3) = item.Footprint.Corners();
+        var pen = selected ? SelectedItemPen : UnselectedItemPen;
+
+        if (item is FurnitureItem furniture)
+            DrawFurnitureItem(context, furniture, pen);
+        else
+            DrawItemPolygon(context, item.Footprint.Corners(), ParseHex(item.ColorHex), pen);
+
+        DrawCentered(context, item.Name, ToPx(item.Position), 11, Brushes.White);
+    }
+
+    private void DrawFurnitureItem(DrawingContext context, FurnitureItem item, IPen pen)
+    {
+        var pos = item.Position;
+        var rot = item.Rotation;
+        var cos = System.Math.Cos(rot);
+        var sin = System.Math.Sin(rot);
+
+        // Sort parts bottom-up so higher parts are drawn on top (e.g. tabletop over legs in 2D).
+        var sortedParts = item.Parts
+            .OrderBy(p => p.BottomY)
+            .ThenBy(p => p.Height);
+
+        foreach (var part in sortedParts)
+        {
+            var worldCenter = new Vec2(
+                pos.X + part.LocalX * cos - part.LocalY * sin,
+                pos.Y + part.LocalX * sin + part.LocalY * cos);
+            var footprint = new FootprintRect(worldCenter, part.Width, part.Depth, rot);
+            var color = part.ColorHex is not null ? ParseHex(part.ColorHex) : ParseHex(item.ColorHex);
+            DrawItemPolygon(context, footprint.Corners(), color, pen);
+        }
+    }
+
+    private void DrawItemPolygon(DrawingContext context, (Vec2, Vec2, Vec2, Vec2) corners, Color color, IPen pen)
+    {
+        var (p0, p1, p2, p3) = corners;
         var geometry = new StreamGeometry();
         using (var ctx = geometry.Open())
         {
@@ -159,32 +194,28 @@ public sealed class FloorPlan2DControl : Control
             ctx.LineTo(ToPx(p3));
             ctx.EndFigure(isClosed: true);
         }
-
-        var fill = new SolidColorBrush(Color.Parse(item.ColorHex), 0.85);
-        context.DrawGeometry(fill, selected ? SelectedItemPen : UnselectedItemPen, geometry);
-
-        DrawCentered(context, item.Name, ToPx(item.Position), 11, Brushes.White);
+        context.DrawGeometry(new SolidColorBrush(color, 0.85), pen, geometry);
     }
 
     private static readonly Color DoorColor = Color.FromRgb(0xE6, 0xB8, 0x4C);
     private static readonly Color WindowColor = Color.FromRgb(0x5A, 0xB0, 0xFF);
 
     // Opening pens (declared after DoorColor/WindowColor so static init order is correct).
-    private static readonly IPen DoorPen   = new Pen(new SolidColorBrush(DoorColor), 4);
-    private static readonly IPen ArcPen    = new Pen(new SolidColorBrush(DoorColor, 0.7), 1.5);
-    private static readonly IPen LeafPen   = new Pen(new SolidColorBrush(DoorColor), 5);
+    private static readonly IPen DoorPen = new Pen(new SolidColorBrush(DoorColor), 4);
+    private static readonly IPen ArcPen = new Pen(new SolidColorBrush(DoorColor, 0.7), 1.5);
+    private static readonly IPen LeafPen = new Pen(new SolidColorBrush(DoorColor), 5);
     private static readonly IPen WindowPen = new Pen(new SolidColorBrush(WindowColor), 4);
 
     // Item pens.
-    private static readonly IPen SelectedItemPen   = new Pen(Brushes.White, 2.5);
+    private static readonly IPen SelectedItemPen = new Pen(Brushes.White, 2.5);
     private static readonly IPen UnselectedItemPen = new Pen(new SolidColorBrush(Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)), 1);
 
     // Compass resources — the needle is a fixed shape so we build it once.
-    private static readonly IPen    CompassRingPen    = new Pen(new SolidColorBrush(Color.FromArgb(0xB0, 0xC9, 0xD1, 0xD9)), 1.5);
-    private static readonly IBrush  CompassBgBrush    = new SolidColorBrush(Color.FromArgb(0x66, 0x20, 0x28, 0x30));
-    private static readonly IBrush  CompassNeedleBrush = new SolidColorBrush(Color.FromRgb(0xE0, 0x6C, 0x6C));
-    private static readonly IBrush  CompassLabelBrush = new SolidColorBrush(Color.FromRgb(0xC9, 0xD1, 0xD9));
-    private static readonly Geometry CompassNeedle    = BuildCompassNeedle();
+    private static readonly IPen CompassRingPen = new Pen(new SolidColorBrush(Color.FromArgb(0xB0, 0xC9, 0xD1, 0xD9)), 1.5);
+    private static readonly IBrush CompassBgBrush = new SolidColorBrush(Color.FromArgb(0x66, 0x20, 0x28, 0x30));
+    private static readonly IBrush CompassNeedleBrush = new SolidColorBrush(Color.FromRgb(0xE0, 0x6C, 0x6C));
+    private static readonly IBrush CompassLabelBrush = new SolidColorBrush(Color.FromRgb(0xC9, 0xD1, 0xD9));
+    private static readonly Geometry CompassNeedle = BuildCompassNeedle();
 
     private static Geometry BuildCompassNeedle()
     {
@@ -325,9 +356,9 @@ public sealed class FloorPlan2DControl : Control
         var l = room.Dimensions.Length.Meters;
 
         if (world.Y >= l - tol) { SelectedTarget = new WallPaintTarget(WallSide.North); return; }
-        if (world.Y <= tol)     { SelectedTarget = new WallPaintTarget(WallSide.South); return; }
-        if (world.X <= tol)     { SelectedTarget = new WallPaintTarget(WallSide.West);  return; }
-        if (world.X >= w - tol) { SelectedTarget = new WallPaintTarget(WallSide.East);  return; }
+        if (world.Y <= tol) { SelectedTarget = new WallPaintTarget(WallSide.South); return; }
+        if (world.X <= tol) { SelectedTarget = new WallPaintTarget(WallSide.West); return; }
+        if (world.X >= w - tol) { SelectedTarget = new WallPaintTarget(WallSide.East); return; }
 
         // 3. Floor: anywhere inside the room bounds.
         if (world.X >= 0 && world.X <= w && world.Y >= 0 && world.Y <= l)

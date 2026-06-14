@@ -184,21 +184,21 @@ public static class RoomMeshBuilder
     private static void AddGlazingBars(List<float> verts, Func<float, float, Vector3> map, Vector3 normal,
         float paneStart, float paneEnd, float paneSill, float paneTop, Mat frameMat)
     {
-        var halfT    = GlazingBarThickness / 2f;
+        var halfT = GlazingBarThickness / 2f;
         var halfMidT = GlazingMidRailThickness / 2f;
         var midX = (paneStart + paneEnd) * 0.5f;
         var midY = (paneSill + paneTop) * 0.5f;
         var quarterY = (paneSill + midY) * 0.5f;
         var threeQuarterY = (midY + paneTop) * 0.5f;
 
-        AddPanel(verts, map, paneStart, paneEnd, midY - halfMidT,       midY + halfMidT,       normal, frameMat);
-        AddPanel(verts, map, paneStart, paneEnd, quarterY - halfT,      quarterY + halfT,      normal, frameMat);
+        AddPanel(verts, map, paneStart, paneEnd, midY - halfMidT, midY + halfMidT, normal, frameMat);
+        AddPanel(verts, map, paneStart, paneEnd, quarterY - halfT, quarterY + halfT, normal, frameMat);
         AddPanel(verts, map, paneStart, paneEnd, threeQuarterY - halfT, threeQuarterY + halfT, normal, frameMat);
 
-        AddPanel(verts, map, midX - halfT, midX + halfT, paneSill,              quarterY - halfT,      normal, frameMat);
-        AddPanel(verts, map, midX - halfT, midX + halfT, quarterY + halfT,      midY - halfMidT,       normal, frameMat);
-        AddPanel(verts, map, midX - halfT, midX + halfT, midY + halfMidT,       threeQuarterY - halfT, normal, frameMat);
-        AddPanel(verts, map, midX - halfT, midX + halfT, threeQuarterY + halfT, paneTop,               normal, frameMat);
+        AddPanel(verts, map, midX - halfT, midX + halfT, paneSill, quarterY - halfT, normal, frameMat);
+        AddPanel(verts, map, midX - halfT, midX + halfT, quarterY + halfT, midY - halfMidT, normal, frameMat);
+        AddPanel(verts, map, midX - halfT, midX + halfT, midY + halfMidT, threeQuarterY - halfT, normal, frameMat);
+        AddPanel(verts, map, midX - halfT, midX + halfT, threeQuarterY + halfT, paneTop, normal, frameMat);
     }
 
     private static void AddPanel(List<float> verts, Func<float, float, Vector3> map,
@@ -207,33 +207,58 @@ public static class RoomMeshBuilder
 
     private static void AddItem(List<float> verts, RoomItem item)
     {
-        var color = ParseMaterial(item.ColorHex, item.Metallic, item.Roughness);
-        AddCuboid(verts, item.Footprint, (float)item.Height.Meters, color);
+        if (item is FurnitureItem furniture)
+            AddFurnitureItem(verts, furniture);
+        else
+        {
+            var color = ParseMaterial(item.ColorHex, item.Metallic, item.Roughness);
+            AddCuboid(verts, item.Footprint, (float)item.Height.Meters, color);
+        }
+    }
+
+    private static void AddFurnitureItem(List<float> verts, FurnitureItem item)
+    {
+        var pos = item.Position;
+        var rot = item.Rotation;
+        var cos = Math.Cos(rot);
+        var sin = Math.Sin(rot);
+
+        foreach (var part in item.Parts)
+        {
+            var mat = ParseMaterial(part.ColorHex ?? item.ColorHex, item.Metallic, item.Roughness);
+            // Rotate the part's local center offset into world space.
+            var worldCenter = new Vec2(
+                pos.X + part.LocalX * cos - part.LocalY * sin,
+                pos.Y + part.LocalX * sin + part.LocalY * cos);
+            var footprint = new FootprintRect(worldCenter, part.Width, part.Depth, rot);
+            AddCuboid(verts, footprint, (float)part.Height, mat, (float)part.BottomY);
+        }
     }
 
     /// <summary>Extrudes a floor footprint into a colored cuboid of the given height.</summary>
-    private static void AddCuboid(List<float> verts, FootprintRect footprint, float h, Mat color)
+    private static void AddCuboid(List<float> verts, FootprintRect footprint, float h, Mat color,
+        float bottomY = 0f)
     {
         var (p0, p1, p2, p3) = footprint.Corners();
 
-        Vector3 Floor(Vec2 p) => new((float)p.X, 0, (float)p.Y);
-        Vector3 Top(Vec2 p) => new((float)p.X, h, (float)p.Y);
+        Vector3 Bot(Vec2 p) => new((float)p.X, bottomY, (float)p.Y);
+        Vector3 Top(Vec2 p) => new((float)p.X, bottomY + h, (float)p.Y);
 
         AddQuad(verts, Top(p0), Top(p1), Top(p2), Top(p3), new Vector3(0, 1, 0), color);
-        AddQuad(verts, Floor(p0), Floor(p3), Floor(p2), Floor(p1), new Vector3(0, -1, 0), color);
+        AddQuad(verts, Bot(p0), Bot(p3), Bot(p2), Bot(p1), new Vector3(0, -1, 0), color);
 
-        AddSide(verts, p0, p1, h, color);
-        AddSide(verts, p1, p2, h, color);
-        AddSide(verts, p2, p3, h, color);
-        AddSide(verts, p3, p0, h, color);
+        AddSide(verts, p0, p1, h, color, bottomY);
+        AddSide(verts, p1, p2, h, color, bottomY);
+        AddSide(verts, p2, p3, h, color, bottomY);
+        AddSide(verts, p3, p0, h, color, bottomY);
     }
 
-    private static void AddSide(List<float> verts, Vec2 a, Vec2 b, float h, Mat color)
+    private static void AddSide(List<float> verts, Vec2 a, Vec2 b, float h, Mat color, float bottomY = 0f)
     {
-        var a0 = new Vector3((float)a.X, 0, (float)a.Y);
-        var b0 = new Vector3((float)b.X, 0, (float)b.Y);
-        var a1 = new Vector3((float)a.X, h, (float)a.Y);
-        var b1 = new Vector3((float)b.X, h, (float)b.Y);
+        var a0 = new Vector3((float)a.X, bottomY, (float)a.Y);
+        var b0 = new Vector3((float)b.X, bottomY, (float)b.Y);
+        var a1 = new Vector3((float)a.X, bottomY + h, (float)a.Y);
+        var b1 = new Vector3((float)b.X, bottomY + h, (float)b.Y);
         var edge = b0 - a0;
         var normal = Vector3.Cross(new Vector3(0, 1, 0), edge);
         AddQuad(verts, a0, b0, b1, a1, normal, color);

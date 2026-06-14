@@ -138,15 +138,15 @@ public class RoomMeshBuilderTests
         var room = EmptyRoom();
         room.Surfaces = new RoomSurfaces
         {
-            FloorColorHex     = "#FF0000",
-            FloorMetallic     = 0.5f,
-            FloorRoughness    = 0.3f,
+            FloorColorHex = "#FF0000",
+            FloorMetallic = 0.5f,
+            FloorRoughness = 0.3f,
             NorthWallColorHex = "#00FF00",
             SouthWallColorHex = "#00FF00",
-            EastWallColorHex  = "#00FF00",
-            WestWallColorHex  = "#00FF00",
-            WallMetallic      = 1.0f,
-            WallRoughness     = 0.1f,
+            EastWallColorHex = "#00FF00",
+            WestWallColorHex = "#00FF00",
+            WallMetallic = 1.0f,
+            WallRoughness = 0.1f,
         };
 
         var mesh = RoomMeshBuilder.Build(room);
@@ -163,8 +163,8 @@ public class RoomMeshBuilderTests
         var side = Length.FromMeters(1);
         var item = new BoxItem("Box", ItemCategory.Custom, side, side, side)
         {
-            Position  = new Vec2(2.5, 2),
-            Metallic  = 0.9f,
+            Position = new Vec2(2.5, 2),
+            Metallic = 0.9f,
             Roughness = 0.1f,
         };
         room.AddItem(item);
@@ -174,15 +174,15 @@ public class RoomMeshBuilderTests
         // The item occupies the last BoxVerts vertices. Each vertex has
         // metallic at index 9 and roughness at index 10 within its stride.
         var itemVertOffset = (FloorVerts + 4 * WallVerts) * RoomMeshBuilder.FloatsPerVertex;
-        var foundMetallic  = false;
+        var foundMetallic = false;
         var foundRoughness = false;
         for (var i = itemVertOffset; i < mesh.Vertices.Length; i += RoomMeshBuilder.FloatsPerVertex)
         {
-            if (Math.Abs(mesh.Vertices[i + 9]  - 0.9f) < 1e-5f) foundMetallic  = true;
+            if (Math.Abs(mesh.Vertices[i + 9] - 0.9f) < 1e-5f) foundMetallic = true;
             if (Math.Abs(mesh.Vertices[i + 10] - 0.1f) < 1e-5f) foundRoughness = true;
         }
 
-        Assert.True(foundMetallic,  "metallic not baked into item vertices");
+        Assert.True(foundMetallic, "metallic not baked into item vertices");
         Assert.True(foundRoughness, "roughness not baked into item vertices");
     }
 

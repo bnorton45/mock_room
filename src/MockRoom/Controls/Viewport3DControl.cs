@@ -82,7 +82,7 @@ public sealed class Viewport3DControl : OpenGlControlBase
     private uint _program;
     private uint _vao;
     private uint _vbo;
-    private int _mvpLocation   = -1;
+    private int _mvpLocation = -1;
     private int _lightLocation = -1;
 
     private Camera? _camera;
@@ -199,8 +199,8 @@ public sealed class Viewport3DControl : OpenGlControlBase
         _gl = GL.GetApi(name => gl.GetProcAddress(name));
 
         _program = BuildProgram(_gl);
-        _mvpLocation     = _gl.GetUniformLocation(_program, "uMvp");
-        _lightLocation   = _gl.GetUniformLocation(_program, "uLightDir");
+        _mvpLocation = _gl.GetUniformLocation(_program, "uMvp");
+        _lightLocation = _gl.GetUniformLocation(_program, "uLightDir");
 
         _vao = _gl.GenVertexArray();
         _gl.BindVertexArray(_vao);

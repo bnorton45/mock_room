@@ -27,14 +27,14 @@ public sealed class ColorPickerWindow : Window
 
         _picker = new ColorView
         {
-            ColorSpectrumShape    = ColorSpectrumShape.Ring,
-            IsAlphaEnabled        = false,
-            IsAlphaVisible        = false,
+            ColorSpectrumShape = ColorSpectrumShape.Ring,
+            IsAlphaEnabled = false,
+            IsAlphaVisible = false,
             IsColorPaletteVisible = false,
-            IsHexInputVisible     = true,
-            ColorModel            = ColorModel.Rgba,
-            SelectedIndex         = 0,
-            Margin                = new Thickness(12),
+            IsHexInputVisible = true,
+            ColorModel = ColorModel.Rgba,
+            SelectedIndex = 0,
+            Margin = new Thickness(12),
         };
 
         // Avalonia's ColorChanged fires with byte-level Color derived from the ring's HsvColor.
