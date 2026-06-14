@@ -10,14 +10,14 @@ namespace MockRoom.Core.Rendering;
 public sealed record RoomSurfaces
 {
     public string FloorColorHex { get; init; } = "#292F38";
-    public float FloorMetallic  { get; init; } = 0f;
+    public float FloorMetallic { get; init; } = 0f;
     public float FloorRoughness { get; init; } = 0.9f;
 
     public string NorthWallColorHex { get; init; } = "#C7CCCE";
     public string SouthWallColorHex { get; init; } = "#C7CCCE";
-    public string EastWallColorHex  { get; init; } = "#C7CCCE";
-    public string WestWallColorHex  { get; init; } = "#C7CCCE";
-    public float WallMetallic  { get; init; } = 0f;
+    public string EastWallColorHex { get; init; } = "#C7CCCE";
+    public string WestWallColorHex { get; init; } = "#C7CCCE";
+    public float WallMetallic { get; init; } = 0f;
     public float WallRoughness { get; init; } = 0.85f;
 
     /// <summary>Returns the hex color for the given wall face.</summary>
@@ -25,8 +25,8 @@ public sealed record RoomSurfaces
     {
         WallSide.North => NorthWallColorHex,
         WallSide.South => SouthWallColorHex,
-        WallSide.East  => EastWallColorHex,
-        _              => WestWallColorHex,
+        WallSide.East => EastWallColorHex,
+        _ => WestWallColorHex,
     };
 
     /// <summary>Returns a copy of this record with the given wall face's color replaced.</summary>
@@ -34,7 +34,7 @@ public sealed record RoomSurfaces
     {
         WallSide.North => this with { NorthWallColorHex = hex },
         WallSide.South => this with { SouthWallColorHex = hex },
-        WallSide.East  => this with { EastWallColorHex  = hex },
-        _              => this with { WestWallColorHex  = hex },
+        WallSide.East => this with { EastWallColorHex = hex },
+        _ => this with { WestWallColorHex = hex },
     };
 }

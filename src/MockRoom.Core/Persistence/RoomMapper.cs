@@ -26,15 +26,15 @@ public static class RoomMapper
             PreferredUnits = room.PreferredUnits,
             Items = room.Items.Select(ToDto).ToList(),
             Openings = room.Openings.Select(ToDto).ToList(),
-            FloorColorHex  = surfaces.FloorColorHex,
-            FloorMetallic  = surfaces.FloorMetallic,
+            FloorColorHex = surfaces.FloorColorHex,
+            FloorMetallic = surfaces.FloorMetallic,
             FloorRoughness = surfaces.FloorRoughness,
             NorthWallColorHex = surfaces.NorthWallColorHex,
             SouthWallColorHex = surfaces.SouthWallColorHex,
-            EastWallColorHex  = surfaces.EastWallColorHex,
-            WestWallColorHex  = surfaces.WestWallColorHex,
-            WallMetallic   = surfaces.WallMetallic,
-            WallRoughness  = surfaces.WallRoughness,
+            EastWallColorHex = surfaces.EastWallColorHex,
+            WestWallColorHex = surfaces.WestWallColorHex,
+            WallMetallic = surfaces.WallMetallic,
+            WallRoughness = surfaces.WallRoughness,
         };
     }
 
@@ -47,15 +47,15 @@ public static class RoomMapper
         {
             Surfaces = new RoomSurfaces
             {
-                FloorColorHex     = document.FloorColorHex,
-                FloorMetallic     = document.FloorMetallic,
-                FloorRoughness    = document.FloorRoughness,
+                FloorColorHex = document.FloorColorHex,
+                FloorMetallic = document.FloorMetallic,
+                FloorRoughness = document.FloorRoughness,
                 NorthWallColorHex = document.NorthWallColorHex ?? fallback,
                 SouthWallColorHex = document.SouthWallColorHex ?? fallback,
-                EastWallColorHex  = document.EastWallColorHex  ?? fallback,
-                WestWallColorHex  = document.WestWallColorHex  ?? fallback,
-                WallMetallic      = document.WallMetallic,
-                WallRoughness     = document.WallRoughness,
+                EastWallColorHex = document.EastWallColorHex ?? fallback,
+                WestWallColorHex = document.WestWallColorHex ?? fallback,
+                WallMetallic = document.WallMetallic,
+                WallRoughness = document.WallRoughness,
             },
         };
         foreach (var item in document.Items)
@@ -84,14 +84,45 @@ public static class RoomMapper
         PositionXMeters = item.Position.X,
         PositionYMeters = item.Position.Y,
         RotationRadians = item.Rotation,
-        ColorHex  = item.ColorHex,
-        Metallic  = item.Metallic,
+        ColorHex = item.ColorHex,
+        Metallic = item.Metallic,
         Roughness = item.Roughness,
+        Parts = item is FurnitureItem fi
+            ? fi.Parts.Select(p => new FurniturePartDto
+            {
+                LocalX = p.LocalX,
+                LocalY = p.LocalY,
+                BottomY = p.BottomY,
+                W = p.Width,
+                D = p.Depth,
+                H = p.Height,
+                ColorHex = p.ColorHex,
+            }).ToList()
+            : null,
     };
 
-    private static RoomItem FromDto(ItemDto dto) =>
-        // Only the box primitive exists today; unknown kinds fall back to a box.
-        new BoxItem(dto.Name, dto.Category,
+    private static RoomItem FromDto(ItemDto dto)
+    {
+        if (dto.ShapeKind == "furniture" && dto.Parts is { Count: > 0 })
+        {
+            var parts = dto.Parts
+                .Select(p => new FurniturePart(p.LocalX, p.LocalY, p.BottomY, p.W, p.D, p.H, p.ColorHex))
+                .ToList();
+            return new FurnitureItem(dto.Name, dto.Category,
+                Length.FromMeters(dto.WidthMeters),
+                Length.FromMeters(dto.DepthMeters),
+                Length.FromMeters(dto.HeightMeters), parts)
+            {
+                Id = dto.Id,
+                Position = new Vec2(dto.PositionXMeters, dto.PositionYMeters),
+                Rotation = dto.RotationRadians,
+                ColorHex = dto.ColorHex,
+                Metallic = dto.Metallic,
+                Roughness = dto.Roughness,
+            };
+        }
+        // Box primitive and unknown kinds fall back to BoxItem.
+        return new BoxItem(dto.Name, dto.Category,
             Length.FromMeters(dto.WidthMeters),
             Length.FromMeters(dto.DepthMeters),
             Length.FromMeters(dto.HeightMeters))
@@ -99,10 +130,11 @@ public static class RoomMapper
             Id = dto.Id,
             Position = new Vec2(dto.PositionXMeters, dto.PositionYMeters),
             Rotation = dto.RotationRadians,
-            ColorHex  = dto.ColorHex,
-            Metallic  = dto.Metallic,
+            ColorHex = dto.ColorHex,
+            Metallic = dto.Metallic,
             Roughness = dto.Roughness,
         };
+    }
 
     private static WallOpeningDto ToDto(WallOpening opening) => new()
     {
@@ -114,10 +146,10 @@ public static class RoomMapper
         HeightMeters = opening.Height.Meters,
         SillMeters = opening.SillHeight.Meters,
         HingeSide = opening.HingeSide,
-        FrameTopMeters    = opening.FrameTop.Meters,
+        FrameTopMeters = opening.FrameTop.Meters,
         FrameBottomMeters = opening.FrameBottom.Meters,
-        FrameLeftMeters   = opening.FrameLeft.Meters,
-        FrameRightMeters  = opening.FrameRight.Meters,
+        FrameLeftMeters = opening.FrameLeft.Meters,
+        FrameRightMeters = opening.FrameRight.Meters,
         ColorHex = opening.ColorHex,
     };
 
@@ -130,11 +162,11 @@ public static class RoomMapper
             dto.HingeSide)
         {
             Id = dto.Id,
-            FrameTop    = Length.FromMeters(dto.FrameTopMeters),
+            FrameTop = Length.FromMeters(dto.FrameTopMeters),
             FrameBottom = Length.FromMeters(dto.FrameBottomMeters),
-            FrameLeft   = Length.FromMeters(dto.FrameLeftMeters),
-            FrameRight  = Length.FromMeters(dto.FrameRightMeters),
-            ColorHex    = dto.ColorHex,
+            FrameLeft = Length.FromMeters(dto.FrameLeftMeters),
+            FrameRight = Length.FromMeters(dto.FrameRightMeters),
+            ColorHex = dto.ColorHex,
         };
 
     private static WallOpening FromLegacy(LegacyDoorDto dto) =>

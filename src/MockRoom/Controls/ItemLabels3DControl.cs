@@ -104,8 +104,8 @@ public sealed class ItemLabels3DControl : Control
             {
                 WallSide.South => new Vector3(cx, cy, inset),
                 WallSide.North => new Vector3(cx, cy, (float)dims.Length.Meters - inset),
-                WallSide.West  => new Vector3(inset, cy, cx),
-                _              => new Vector3((float)dims.Width.Meters - inset, cy, cx),
+                WallSide.West => new Vector3(inset, cy, cx),
+                _ => new Vector3((float)dims.Width.Meters - inset, cy, cx),
             };
 
             DrawBadge(context, viewport, worldPos, label, pad, fontSize);
