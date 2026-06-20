@@ -63,4 +63,44 @@ public readonly struct FootprintRect : IFloorRegion
         var localY = d.X * sin + d.Y * cos;
         return Math.Abs(localX) <= Width / 2 && Math.Abs(localY) <= Depth / 2;
     }
+
+    /// <summary>
+    /// True if this rectangle overlaps <paramref name="other"/> in the floor plane.
+    /// Uses the Separating Axis Theorem on the four face-normal axes of the two boxes.
+    /// Rectangles that only touch (zero-gap) are not considered overlapping.
+    /// </summary>
+    public bool Intersects(FootprintRect other)
+    {
+        var (a0, a1, a2, a3) = Corners();
+        var (b0, b1, b2, b3) = other.Corners();
+
+        // Four candidate separating axes: two face normals from each box.
+        Span<Vec2> axes = stackalloc Vec2[4]
+        {
+            new(Math.Cos(Yaw), Math.Sin(Yaw)),
+            new(-Math.Sin(Yaw), Math.Cos(Yaw)),
+            new(Math.Cos(other.Yaw), Math.Sin(other.Yaw)),
+            new(-Math.Sin(other.Yaw), Math.Cos(other.Yaw)),
+        };
+
+        foreach (var axis in axes)
+        {
+            var (aMin, aMax) = Project(axis, a0, a1, a2, a3);
+            var (bMin, bMax) = Project(axis, b0, b1, b2, b3);
+            // A gap (or exact touching) on any axis means the boxes don't overlap.
+            if (aMax <= bMin || bMax <= aMin)
+                return false;
+        }
+        return true;
+    }
+
+    private static (double Min, double Max) Project(Vec2 axis, Vec2 p0, Vec2 p1, Vec2 p2, Vec2 p3)
+    {
+        var t0 = Vec2.Dot(axis, p0);
+        var t1 = Vec2.Dot(axis, p1);
+        var t2 = Vec2.Dot(axis, p2);
+        var t3 = Vec2.Dot(axis, p3);
+        return (Math.Min(Math.Min(t0, t1), Math.Min(t2, t3)),
+                Math.Max(Math.Max(t0, t1), Math.Max(t2, t3)));
+    }
 }

@@ -49,15 +49,17 @@ public sealed class RoomEditorViewModel : ViewModelBase
     private double _freeFraction = 1.0;
     private string? _dimensionError;
     private int _renderVersion;
-    private int _placementCounter;
     private bool _snapEnabled = true;
     private string _itemWidthText = "";
     private string _itemDepthText = "";
     private string _itemHeightText = "";
     private string _itemRotationText = "";
     private string? _itemError;
+    private string? _addItemError;
     private WallOpening? _selectedOpening;
     private WallSide _openingWall = WallSide.South;
+    private IReadOnlyList<WallOption> _wallOptions = [];
+    private WallOption? _selectedWallOption;
     private HingeSide _openingHinge = HingeSide.Start;
     private string _openingOffsetText = "";
     private string _openingWidthText = "";
@@ -153,8 +155,24 @@ public sealed class RoomEditorViewModel : ViewModelBase
     /// <summary>Wall openings (doors, closet doors, windows) shown in the openings list.</summary>
     public ObservableCollection<WallOpening> Openings { get; } = [];
 
-    /// <summary>Choices for the opening editor's wall and hinge combo boxes.</summary>
-    public WallSide[] WallSides { get; } = Enum.GetValues<WallSide>();
+    /// <summary>Wall choices for the opening editor, with availability flags driven by furniture placement.</summary>
+    public IReadOnlyList<WallOption> WallOptions => _wallOptions;
+
+    /// <summary>The currently selected wall option; synced two-way with <see cref="OpeningWall"/>.</summary>
+    public WallOption? SelectedWallOption
+    {
+        get => _selectedWallOption;
+        set
+        {
+            if (!SetField(ref _selectedWallOption, value)) return;
+            if (value is not null)
+            {
+                _openingWall = value.Side;
+                OnPropertyChanged(nameof(OpeningWall));
+            }
+        }
+    }
+
     public HingeSide[] HingeSides { get; } = Enum.GetValues<HingeSide>();
 
     /// <summary>True when the center pane shows the 3D viewport instead of the 2D plan.</summary>
@@ -427,6 +445,19 @@ public sealed class RoomEditorViewModel : ViewModelBase
 
     public bool HasItemError => !string.IsNullOrEmpty(_itemError);
 
+    /// <summary>Set when AddBox or AddFurniture cannot find a free placement position.</summary>
+    public string? AddItemError
+    {
+        get => _addItemError;
+        private set
+        {
+            if (SetField(ref _addItemError, value))
+                OnPropertyChanged(nameof(HasAddItemError));
+        }
+    }
+
+    public bool HasAddItemError => !string.IsNullOrEmpty(_addItemError);
+
     public WallOpening? SelectedOpening
     {
         get => _selectedOpening;
@@ -459,7 +490,16 @@ public sealed class RoomEditorViewModel : ViewModelBase
     /// <summary>True when the selected opening has a hinge side to configure (doors and closet doors, not windows).</summary>
     public bool OpeningHasHinge => _selectedOpening?.Kind is OpeningKind.Door or OpeningKind.ClosetDoor;
 
-    public WallSide OpeningWall { get => _openingWall; set => SetField(ref _openingWall, value); }
+    public WallSide OpeningWall
+    {
+        get => _openingWall;
+        set
+        {
+            if (!SetField(ref _openingWall, value)) return;
+            _selectedWallOption = _wallOptions.FirstOrDefault(o => o.Side == value);
+            OnPropertyChanged(nameof(SelectedWallOption));
+        }
+    }
     public HingeSide OpeningHinge { get => _openingHinge; set => SetField(ref _openingHinge, value); }
     public string OpeningOffsetText { get => _openingOffsetText; set => SetField(ref _openingOffsetText, value); }
     public string OpeningWidthText { get => _openingWidthText; set => SetField(ref _openingWidthText, value); }
@@ -491,6 +531,7 @@ public sealed class RoomEditorViewModel : ViewModelBase
     /// <summary>
     /// Moves <paramref name="item"/> so its center is at <paramref name="world"/>,
     /// snapping to the grid (when enabled) and clamping the footprint inside the room.
+    /// Blocks the move if it would overlap a door swing or another floor item.
     /// Called by the floor-plan view while the user drags.
     /// </summary>
     public void DragItemTo(RoomItem item, Vec2 world)
@@ -503,21 +544,29 @@ public sealed class RoomEditorViewModel : ViewModelBase
             y = Snap(y);
         }
 
-        // Keep the (possibly rotated) footprint within the room bounds.
-        var probe = new FootprintRect(Vec2.Zero, item.Width.Meters, item.Depth.Meters, item.Rotation);
+        var target = ComputeClampedPosition(new Vec2(x, y), item.Width.Meters, item.Depth.Meters, item.Rotation);
+        var footprint = new FootprintRect(target, item.Width.Meters, item.Depth.Meters, item.Rotation);
+
+        if (OverlapsAnySwing(footprint) || OverlapsAnyFloorItem(footprint, item))
+            return;
+
+        item.Position = target;
+        Recompute();
+    }
+
+    /// <summary>
+    /// Clamps <paramref name="raw"/> so the bounding box of a footprint with the given
+    /// dimensions stays entirely within the room bounds.
+    /// </summary>
+    private Vec2 ComputeClampedPosition(Vec2 raw, double widthMeters, double depthMeters, double rotation)
+    {
+        var probe = new FootprintRect(Vec2.Zero, widthMeters, depthMeters, rotation);
         var (minX, minY, maxX, maxY) = probe.Bounds();
         var halfX = (maxX - minX) / 2;
         var halfY = (maxY - minY) / 2;
         var roomW = Room.Dimensions.Width.Meters;
         var roomL = Room.Dimensions.Length.Meters;
-
-        var target = new Vec2(Clamp(x, halfX, roomW - halfX), Clamp(y, halfY, roomL - halfY));
-        // Nothing may sit in a door or closet-door swing path — block the move if it would.
-        if (OverlapsAnySwing(new FootprintRect(target, item.Width.Meters, item.Depth.Meters, item.Rotation)))
-            return;
-
-        item.Position = target;
-        Recompute();
+        return new Vec2(Clamp(raw.X, halfX, roomW - halfX), Clamp(raw.Y, halfY, roomL - halfY));
     }
 
     /// <summary>True if the footprint overlaps any door/closet-door swing arc in the room.</summary>
@@ -533,6 +582,81 @@ public sealed class RoomEditorViewModel : ViewModelBase
             }
         }
         return false;
+    }
+
+    /// <summary>
+    /// True if the footprint overlaps any floor item other than <paramref name="exclude"/>.
+    /// </summary>
+    private bool OverlapsAnyFloorItem(FootprintRect footprint, RoomItem? exclude = null)
+    {
+        foreach (var item in Room.Items)
+        {
+            if (ReferenceEquals(item, exclude)) continue;
+            if (footprint.Intersects(item.Footprint)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Scans the room in concentric grid rings from the centre and returns the first
+    /// position where an item of the given dimensions fits without overlapping another
+    /// item or a door swing. Returns null if no free position exists.
+    /// </summary>
+    private Vec2? FindFreePlacement(double widthMeters, double depthMeters, double rotation = 0)
+    {
+        var roomW = Room.Dimensions.Width.Meters;
+        var roomL = Room.Dimensions.Length.Meters;
+        var cx = roomW / 2;
+        var cy = roomL / 2;
+        var step = Math.Max(SnapStepMeters, 0.25);
+        var maxRing = (int)(Math.Max(roomW, roomL) / step) + 1;
+
+        Vec2? lastClamped = null;
+
+        for (var ring = 0; ring <= maxRing; ring++)
+        {
+            for (var row = -ring; row <= ring; row++)
+            {
+                for (var col = -ring; col <= ring; col++)
+                {
+                    // Only test positions on the current outer ring to avoid re-testing inner ones.
+                    if (Math.Abs(row) != ring && Math.Abs(col) != ring)
+                        continue;
+
+                    var raw = new Vec2(cx + col * step, cy + row * step);
+                    var pos = ComputeClampedPosition(raw, widthMeters, depthMeters, rotation);
+
+                    // Skip if clamping collapsed this to a position we already tested.
+                    if (lastClamped is { } prev && pos.Equals(prev))
+                        continue;
+                    lastClamped = pos;
+
+                    var footprint = new FootprintRect(pos, widthMeters, depthMeters, rotation);
+                    if (!OverlapsAnySwing(footprint) && !OverlapsAnyFloorItem(footprint))
+                        return pos;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Tries to place an item by calling <see cref="FindFreePlacement"/> at 30-degree
+    /// rotation increments (0°, 30°, 60°, …, 150°). Returns the first position and
+    /// rotation that fit, or null if no orientation works.
+    /// </summary>
+    private (Vec2 Position, double Rotation)? FindFreePlacementWithRotation(
+        double widthMeters, double depthMeters)
+    {
+        for (var deg = 0; deg < 180; deg += 30)
+        {
+            var rotation = deg * Math.PI / 180.0;
+            var pos = FindFreePlacement(widthMeters, depthMeters, rotation);
+            if (pos is not null)
+                return (pos.Value, rotation);
+        }
+        return null;
     }
 
     /// <summary>Serializes the current room to <paramref name="stream"/> as a .mockroom document.</summary>
@@ -609,11 +733,16 @@ public sealed class RoomEditorViewModel : ViewModelBase
     {
         if (SelectedFurnitureTemplate is null)
             return;
-        var step = 0.3 * (_placementCounter++ % 5);
-        var center = new Vec2(
-            Room.Dimensions.Width.Meters / 2 + step,
-            Room.Dimensions.Length.Meters / 2 + step);
-        var item = SelectedFurnitureTemplate.CreateItem(center);
+        var t = SelectedFurnitureTemplate;
+        var placement = FindFreePlacementWithRotation(t.DefaultWidth.Meters, t.DefaultDepth.Meters);
+        if (placement is null)
+        {
+            AddItemError = "No space available — the room is too full to place this item.";
+            return;
+        }
+        AddItemError = null;
+        var item = t.CreateItem(placement.Value.Position);
+        item.Rotation = placement.Value.Rotation;
         Room.AddItem(item);
         Items.Add(item);
         SelectedTarget = new ItemPaintTarget(item);
@@ -622,20 +751,21 @@ public sealed class RoomEditorViewModel : ViewModelBase
 
     private void AddBox()
     {
-        // Drop near the room center, nudging each new item so they don't stack exactly.
-        var step = 0.3 * (_placementCounter++ % 5);
-        var center = new Vec2(
-            Room.Dimensions.Width.Meters / 2 + step,
-            Room.Dimensions.Length.Meters / 2 + step);
-
-        var name = string.IsNullOrWhiteSpace(_newItemName) ? "Box" : _newItemName.Trim();
         var side = Length.FromMeters(DefaultBoxMeters);
+        var placement = FindFreePlacementWithRotation(side.Meters, side.Meters);
+        if (placement is null)
+        {
+            AddItemError = "No space available — the room is too full to place another box.";
+            return;
+        }
+        AddItemError = null;
+        var name = string.IsNullOrWhiteSpace(_newItemName) ? "Box" : _newItemName.Trim();
         var item = new BoxItem(name, ItemCategory.Custom, side, side, side)
         {
-            Position = center,
+            Position = placement.Value.Position,
+            Rotation = placement.Value.Rotation,
             ColorHex = DefaultBoxColor,
         };
-
         Room.AddItem(item);
         Items.Add(item);
         SelectedTarget = new ItemPaintTarget(item);
@@ -650,6 +780,7 @@ public sealed class RoomEditorViewModel : ViewModelBase
         Room.RemoveItem(SelectedItem);
         Items.Remove(SelectedItem);
         SelectedTarget = null;
+        AddItemError = null;
         Recompute();
     }
 
@@ -670,6 +801,7 @@ public sealed class RoomEditorViewModel : ViewModelBase
         }
 
         DimensionError = null;
+        AddItemError = null;
         Room.Dimensions = new RoomDimensions(width, length, height);
         EyeHeightMaxMeters = height.Meters;
         if (_eyeHeightMeters > EyeHeightMaxMeters)
@@ -703,6 +835,12 @@ public sealed class RoomEditorViewModel : ViewModelBase
             return;
         }
 
+        if (height.Meters > Room.Dimensions.Height.Meters)
+        {
+            ItemError = $"Item height cannot exceed the room height ({FormatPlain(Room.Dimensions.Height)}).";
+            return;
+        }
+
         if (!double.TryParse(ItemRotationText, System.Globalization.NumberStyles.Float,
                 System.Globalization.CultureInfo.InvariantCulture, out var degrees))
         {
@@ -711,9 +849,21 @@ public sealed class RoomEditorViewModel : ViewModelBase
         }
 
         var rotation = degrees * Math.PI / 180.0;
-        if (OverlapsAnySwing(new FootprintRect(item.Position, width.Meters, depth.Meters, rotation)))
+
+        // Compute the position the item will settle at after the new footprint is clamped
+        // to the room boundary, then validate all placement constraints against that.
+        var clampedPos = ComputeClampedPosition(item.Position, width.Meters, depth.Meters, rotation);
+        var footprint = new FootprintRect(clampedPos, width.Meters, depth.Meters, rotation);
+
+        if (OverlapsAnySwing(footprint))
         {
             ItemError = "Item would block a door swing.";
+            return;
+        }
+
+        if (OverlapsAnyFloorItem(footprint, item))
+        {
+            ItemError = "Item would overlap another item on the floor.";
             return;
         }
 
@@ -722,9 +872,8 @@ public sealed class RoomEditorViewModel : ViewModelBase
         item.Depth = depth;
         item.Height = height;
         item.Rotation = rotation;
-
-        // Re-clamp the resized footprint back inside the room, then recompute.
-        DragItemTo(item, item.Position);
+        item.Position = clampedPos;
+        Recompute();
     }
 
     private void AddOpening(OpeningKind kind)
@@ -759,6 +908,32 @@ public sealed class RoomEditorViewModel : ViewModelBase
         {
             OpeningError = $"No room on the {wall} wall for another opening.";
             return;
+        }
+
+        // For swing-based openings, find a hinge orientation that keeps the arc clear of furniture.
+        if (opening.Swings)
+        {
+            HingeSide[] hinges = kind == OpeningKind.Door
+                ? [HingeSide.Start, HingeSide.End]
+                : [HingeSide.Start]; // closet: two symmetric leaves, hinge choice has no effect
+
+            var swingClear = false;
+            foreach (var hinge in hinges)
+            {
+                opening.HingeSide = hinge;
+                if (opening.FloorRegions(Room.Dimensions)
+                           .All(arc => Room.Items.All(item => !arc.Intersects(item.Footprint))))
+                {
+                    swingClear = true;
+                    break;
+                }
+            }
+
+            if (!swingClear)
+            {
+                OpeningError = $"The door swing on the {wall} wall would block furniture. Try another wall.";
+                return;
+            }
         }
 
         OpeningError = null;
@@ -984,6 +1159,113 @@ public sealed class RoomEditorViewModel : ViewModelBase
     private double WallLengthFor(WallSide wall) =>
         wall is WallSide.North or WallSide.South ? Room.Dimensions.Width.Meters : Room.Dimensions.Length.Meters;
 
+    /// <summary>
+    /// Rebuilds <see cref="WallOptions"/> by checking whether a standard door can be placed
+    /// on each wall without its swing arc colliding with existing floor items.
+    /// Called from <see cref="Recompute"/> so it stays current whenever the room changes.
+    /// </summary>
+    private void RefreshWallOptions()
+    {
+        _wallOptions = Enum.GetValues<WallSide>()
+            .Select(side => new WallOption(side, CanFitOpeningOnWall(OpeningKind.Door, side)))
+            .ToArray();
+        OnPropertyChanged(nameof(WallOptions));
+
+        // Resync SelectedWallOption — WallOption instances are recreated each time
+        _selectedWallOption = _wallOptions.FirstOrDefault(o => o.Side == _openingWall);
+        OnPropertyChanged(nameof(SelectedWallOption));
+    }
+
+    /// <summary>
+    /// Returns true if an opening of <paramref name="kind"/> can be placed on <paramref name="wall"/>
+    /// at some position where its swing arc does not intersect any floor item.
+    /// </summary>
+    private bool CanFitOpeningOnWall(OpeningKind kind, WallSide wall)
+    {
+        if (kind == OpeningKind.Window) return true;
+
+        var dims = Room.Dimensions;
+        var wallLength = WallLengthFor(wall);
+        var paneWidth = kind == OpeningKind.ClosetDoor ? DefaultClosetWidthMeters : DefaultDoorWidthMeters;
+        var frame = kind == OpeningKind.Door ? DefaultWindowFrameMeters : 0.0;
+        var outerWidth = Math.Min(paneWidth + 2 * frame, Math.Max(0.1, wallLength - 2 * frame));
+
+        if (outerWidth > wallLength) return false;
+
+        // Collect existing openings on this wall as occupied ranges
+        var occupied = new List<(double Left, double Right)>();
+        foreach (var o in Room.Openings)
+        {
+            if (o.Wall != wall) continue;
+            occupied.Add((
+                o.OffsetAlongWall.Meters - o.OuterWidth.Meters / 2,
+                o.OffsetAlongWall.Meters + o.OuterWidth.Meters / 2));
+        }
+        occupied.Sort((a, b) => a.Left.CompareTo(b.Left));
+
+        // Walk each gap and test swing clearance at a few positions within it
+        var cursor = 0.0;
+        foreach (var (oLeft, oRight) in occupied)
+        {
+            if (oLeft - cursor >= outerWidth &&
+                SwingClearsFloorItems(kind, wall, cursor, oLeft, outerWidth, paneWidth, dims))
+                return true;
+            cursor = Math.Max(cursor, oRight);
+        }
+        return wallLength - cursor >= outerWidth &&
+               SwingClearsFloorItems(kind, wall, cursor, wallLength, outerWidth, paneWidth, dims);
+    }
+
+    /// <summary>
+    /// Tests three positions within a wall gap (left, centre, right) and, for doors, both
+    /// hinge sides. Returns true if any combination produces a swing arc that is clear of
+    /// all floor items.
+    /// </summary>
+    private bool SwingClearsFloorItems(OpeningKind kind, WallSide wall,
+        double gapLeft, double gapRight, double outerWidth, double paneWidth, RoomDimensions dims)
+    {
+        HingeSide[] hinges = kind == OpeningKind.Door
+            ? [HingeSide.Start, HingeSide.End]
+            : [HingeSide.Start];
+
+        double[] offsets =
+        [
+            gapLeft + outerWidth / 2,
+            (gapLeft + gapRight) / 2,
+            gapRight - outerWidth / 2,
+        ];
+
+        foreach (var offset in offsets)
+        {
+            foreach (var hinge in hinges)
+            {
+                var temp = new WallOpening(kind, wall,
+                    Length.FromMeters(offset),
+                    Length.FromMeters(paneWidth),
+                    Length.FromMeters(DefaultDoorHeightMeters),
+                    hingeSide: hinge);
+                if (kind == OpeningKind.Door)
+                {
+                    temp.FrameTop = Length.FromMeters(DefaultWindowFrameMeters);
+                    temp.FrameLeft = Length.FromMeters(DefaultWindowFrameMeters);
+                    temp.FrameRight = Length.FromMeters(DefaultWindowFrameMeters);
+                }
+
+                var clear = true;
+                foreach (var arc in temp.FloorRegions(dims))
+                {
+                    foreach (var item in Room.Items)
+                    {
+                        if (arc.Intersects(item.Footprint)) { clear = false; break; }
+                    }
+                    if (!clear) break;
+                }
+                if (clear) return true;
+            }
+        }
+        return false;
+    }
+
     private void RefreshDimensionTexts()
     {
         WidthText = FormatPlain(Room.Dimensions.Width);
@@ -1072,6 +1354,7 @@ public sealed class RoomEditorViewModel : ViewModelBase
     {
         LastReport = _calculator.Compute(Room);
         RefreshAreaTexts();
+        RefreshWallOptions();
         RenderVersion++;
     }
 

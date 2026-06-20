@@ -80,6 +80,8 @@
                         </ComboBox>
                         <Button Content="Add furniture" HorizontalAlignment="Stretch"
                                 Command="{Binding AddFurnitureCommand}" />
+                        <TextBlock Text="{Binding AddItemError}" Foreground="#E06C6C" FontSize="11"
+                                   TextWrapping="Wrap" IsVisible="{Binding HasAddItemError}" />
                     </StackPanel>
 
                     <!-- Add a plain custom box -->
@@ -88,14 +90,32 @@
                         <TextBox Text="{Binding NewItemName}" Watermark="Name (e.g. Shelf, Stand)" />
                         <Button Content="Add box" HorizontalAlignment="Stretch"
                                 Command="{Binding AddBoxCommand}" />
+                        <TextBlock Text="{Binding AddItemError}" Foreground="#E06C6C" FontSize="11"
+                                   TextWrapping="Wrap" IsVisible="{Binding HasAddItemError}" />
                     </StackPanel>
 
                     <!-- Openings: doors, closet doors, windows -->
                     <StackPanel Spacing="6">
                         <TextBlock Text="OPENINGS" FontSize="11" Foreground="#7A828C" />
                         <ComboBox HorizontalAlignment="Stretch"
-                                  ItemsSource="{Binding WallSides}"
-                                  SelectedItem="{Binding OpeningWall}" />
+                                  ItemsSource="{Binding WallOptions}"
+                                  SelectedItem="{Binding SelectedWallOption, Mode=TwoWay}">
+                            <ComboBox.Styles>
+                                <Style Selector="ComboBoxItem:disabled">
+                                    <Setter Property="Opacity" Value="0.4" />
+                                </Style>
+                                <Style Selector="ComboBoxItem" x:DataType="vm:WallOption">
+                                    <Setter Property="IsEnabled" Value="{Binding CanFit}" />
+                                </Style>
+                            </ComboBox.Styles>
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:WallOption">
+                                    <TextBlock Text="{Binding Label}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <TextBlock Text="Greyed-out walls have no room for a door swing around the current furniture."
+                                   FontSize="10" Foreground="#5E666F" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <Button Content="+ Door" Command="{Binding AddDoorCommand}" />
                             <Button Content="+ Closet" Command="{Binding AddClosetDoorCommand}" />

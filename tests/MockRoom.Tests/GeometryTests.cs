@@ -85,4 +85,49 @@ public class GeometryTests
         Assert.Equal(3, floor.X, 6);
         Assert.Equal(7, floor.Y, 6);
     }
+
+    [Fact]
+    public void Footprint_Intersects_OverlappingAxisAlignedRects()
+    {
+        var a = new FootprintRect(new Vec2(0, 0), 2.0, 2.0);
+        var b = new FootprintRect(new Vec2(1, 1), 2.0, 2.0); // overlaps a
+        Assert.True(a.Intersects(b));
+        Assert.True(b.Intersects(a)); // symmetry
+    }
+
+    [Fact]
+    public void Footprint_Intersects_SeparatedAxisAlignedRects()
+    {
+        var a = new FootprintRect(new Vec2(0, 0), 2.0, 2.0);
+        var b = new FootprintRect(new Vec2(3, 0), 2.0, 2.0); // gap of 1 m between
+        Assert.False(a.Intersects(b));
+        Assert.False(b.Intersects(a));
+    }
+
+    [Fact]
+    public void Footprint_Intersects_TouchingRects_NotConsideredOverlap()
+    {
+        // Right edge of a (x=1) exactly meets left edge of b (x=1).
+        var a = new FootprintRect(new Vec2(0, 0), 2.0, 2.0);
+        var b = new FootprintRect(new Vec2(2, 0), 2.0, 2.0);
+        Assert.False(a.Intersects(b));
+    }
+
+    [Fact]
+    public void Footprint_Intersects_RotatedOverlap()
+    {
+        // Two 2×0.5 rects at the same center, one at 0° and one at 90°, overlap.
+        var a = new FootprintRect(Vec2.Zero, 2.0, 0.5, 0);
+        var b = new FootprintRect(Vec2.Zero, 2.0, 0.5, Math.PI / 2);
+        Assert.True(a.Intersects(b));
+    }
+
+    [Fact]
+    public void Footprint_Intersects_RotatedNoOverlap()
+    {
+        // A long thin rect at the origin pointing along X; another 3 m away pointing along Y.
+        var a = new FootprintRect(new Vec2(0, 0), 1.0, 0.2, 0);
+        var b = new FootprintRect(new Vec2(3, 0), 1.0, 0.2, Math.PI / 2);
+        Assert.False(a.Intersects(b));
+    }
 }
